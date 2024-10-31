@@ -36,9 +36,9 @@ There are a few parsing options available that are passed in the the `options` p
 
 - `type_conversion`
 
-  allows registering a function to perform type conversions from the raw string to a custom representation. TOML requires them all the be RFC3339 compliant, and the strings are already verified when this function is called. The `type_conversion` options currently supports the various datetime types.
-  - `datetime` - includes TZ
-  - `datetime-local` - no TZ
+  allows registering a function to perform type conversions from the raw string to a custom representation. TOML requires them all the be RFC3339 compliant, and the strings are already verified when this function is called. The `type_conversion` option currently supports the various datetime types:
+  - `datetime` - includes TZ (2024-10-31T12:49Z)
+  - `datetime-local` - no TZ (2024-10-31T12:49)
   - `date-local` - Just the date (2024-10-31)
   - `time-local` - Just the time (12:49)
 
@@ -46,13 +46,13 @@ There are a few parsing options available that are passed in the the `options` p
   ```lua
   local luatz = require("luatz")
   local type_conversion = {
-    ["datetime"] = luatz.parse.rfc_3339, -- realistically you would want to handle errors from whatever module
+    ["datetime"] = luatz.parse.rfc_3339, -- realistically you would want to handle errors accordingly
     ["datetime-local"] = luatz.parse.rfc_3339
   }
   tinytoml.parse("a=2024-10-31T12:49Z", {type_conversion=type_conversion})
   ```
 
-  or just use your own method:
+  or just use your own function:
   ```lua
   local function my_custom_datetime(raw_string)
     return {["now_in_a_table"] = raw_string}
@@ -63,3 +63,4 @@ There are a few parsing options available that are passed in the the `options` p
   }
   tinytoml.parse("a=2024-10-31T12:49Z", {type_conversion=type_conversion})
   ```
+
