@@ -31,16 +31,16 @@ There are a few parsing options available that are passed in the the `options` p
 
   allows loading the TOML data from a string rather than a file:
   ```lua
-  tinytoml.parse("fruit=banana\nvegetable=carrot", {load_from_string=true})
+  tinytoml.parse("fruit='banana\'nvegetable='carrot'", {load_from_string=true})
   ```
 
 - `type_conversion`
 
   allows registering a function to perform type conversions from the raw string to a custom representation. TOML requires them all the be RFC3339 compliant, and the strings are already verified when this function is called. The `type_conversion` option currently supports the various datetime types:
-  - `datetime` - includes TZ (2024-10-31T12:49Z)
-  - `datetime-local` - no TZ (2024-10-31T12:49)
-  - `date-local` - Just the date (2024-10-31)
-  - `time-local` - Just the time (12:49)
+  - `datetime` - includes TZ (`2024-10-31T12:49:00Z`)
+  - `datetime-local` - no TZ (`2024-10-31T12:49:00`)
+  - `date-local` - Just the date (`2024-10-31`)
+  - `time-local` - Just the time (`12:49:00`)
 
   For example, if you wanted to use [luatz](https://github.com/daurnimator/luatz) for handling datetimes:
   ```lua
@@ -49,7 +49,7 @@ There are a few parsing options available that are passed in the the `options` p
     ["datetime"] = luatz.parse.rfc_3339, -- realistically you would want to handle errors accordingly
     ["datetime-local"] = luatz.parse.rfc_3339
   }
-  tinytoml.parse("a=2024-10-31T12:49Z", {type_conversion=type_conversion})
+  tinytoml.parse("a=2024-10-31T12:49:00Z", {load_from_string=true, type_conversion=type_conversion})
   ```
 
   or just use your own function:
@@ -58,9 +58,11 @@ There are a few parsing options available that are passed in the the `options` p
     return {["now_in_a_table"] = raw_string}
   end
   local type_conversion = {
-    ["datetime"] = my_custom_date,
-    ["datetime-local"] = my_custom_date
+    ["datetime"] = my_custom_datetime,
+    ["datetime-local"] = my_custom_datetime
   }
-  tinytoml.parse("a=2024-10-31T12:49Z", {type_conversion=type_conversion})
+  tinytoml.parse("a=2024-10-31T12:49:00Z", {load_from_string=true, type_conversion=type_conversion})
   ```
+- `assign_value_function`
 
+  this method is called when assigning _every_ value to a table. It's mostly used to help perform the unit testing using [toml-test](https://github.com/toml-lang/toml-test), since they want to see the type and parsed value for comparison purposes. This option is the only one that has potential to change, so we advice against using it. If you need specific functionality that you're implementing through this (or find this function useful in general) - please let us know.
