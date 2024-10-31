@@ -1,1 +1,2 @@
 # tinytoml
+[![Run Tests and Code Coverage](https://github.com/FourierTransformer/tinytoml/actions/workflows/test-and-coverage.yml/badge.svg)](https://github.com/FourierTransformer/tinytoml/actions/workflows/test-and-coverage.yml) [![Coverage Status](https://coveralls.io/repos/github/FourierTransformer/tinytoml/badge.svg?branch=refs/pull/1/merge)](https://coveralls.io/github/FourierTransformer/tinytoml?branch=refs/pull/1/merge)
