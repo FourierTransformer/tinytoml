@@ -36,7 +36,7 @@ jobs:
       - name: run unit tests with coverage
         continue-on-error: true
         run: |
-          toml-test -- lua -lluacov spec/toml-test.lua
+          toml-test -- lua_install/bin/lua -lluacov spec/toml-test.lua
           
       - name: Report test coverage
         if: success()
