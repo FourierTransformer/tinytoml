@@ -1,7 +1,7 @@
 # tinytoml
 [![Run Tests and Code Coverage](https://github.com/FourierTransformer/tinytoml/actions/workflows/test-and-coverage.yml/badge.svg)](https://github.com/FourierTransformer/tinytoml/actions/workflows/test-and-coverage.yml) [![Coverage Status](https://coveralls.io/repos/github/FourierTransformer/tinytoml/badge.svg?branch=refs/pull/1/merge)](https://coveralls.io/github/FourierTransformer/tinytoml?branch=main)
 
-tinytoml is a pure Lua [TOML](https://toml.io) parsing library. It's written in [Teal](https://github.com/teal-language/tl) and works with Lua 5.1-5.4 and LuaJIT 2.0/2.1. tinytoml parses a TOML document into a standard Lua table using default Lua types. Since TOML supports various datetime types, those are _by default_ represented by strings, but can be configured to use a custom type if desired.
+tinytoml is a pure Lua [TOML](https://toml.io) parsing library. It's written in [Teal](https://github.com/teal-language/tl) and works with Lua 5.1-5.4 and LuaJIT 2.0/2.1. tinytoml parses a TOML document into a standard Lua table using default Lua types. Since TOML supports various datetime types, those are _defaultly_ represented by strings, but can be configured to use a custom type if desired.
 
 tinytoml passes all the [toml-test](https://github.com/toml-lang/toml-test) use cases that Lua can realistically pass (even the UTF-8 ones!). The few that fail are mostly representational:
 - Lua doesn't differentiate between an array or a dictionary, so tests involving _empty_ arrays fail.
@@ -9,6 +9,11 @@ tinytoml passes all the [toml-test](https://github.com/toml-lang/toml-test) use 
 - tinytoml currently support trailing commas in arrays/inline-tables. This is coming in TOML 1.1.0.
 
 Current Supported TOML Version: 1.0.0
+
+## Implemented and Missing Features
+- TOML Parsing in Pure Lua, just grab the tinytoml.lua file and go!
+- Does not keep track of comments
+- Cannot encode a table to TOML
 
 ## Installing
 You can grab the `tinytoml.lua` file from this repo (or the `tinytoml.tl` file if using Teal)
