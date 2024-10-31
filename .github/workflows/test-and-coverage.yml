@@ -18,19 +18,20 @@ jobs:
       - name: Install Lua (${{ matrix.lua }})
         run: |
           pip install hererocks
-          hererocks lua_install -r^ --${{ matrix.lua }}
+          hererocks -r^ --${{ matrix.lua }} lua_install
 
       - name: Install toml-test
         run: go install github.com/toml-lang/toml-test/cmd/toml-test@v1.5.0
     
       - name: install depedencies
         run: |
+          source lua_install/bin/activate
           luarocks install lua-cjson
           luarocks install luacov
           luarocks install luacov-coveralls
           
       - name: run unit tests with coverage
-        run: toml-test lua -llcov spec/test-runner.lua
+        run: toml-test lua -lluacov spec/test-runner.lua
           
       - name: Report test coverage
         if: success()
