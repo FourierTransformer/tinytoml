@@ -4,14 +4,19 @@ on:
   push:
     branches: [ main ]
   pull_request:
+    types: [review_requested, ready_for_review]
 
 jobs:
-  test:
+  test:  
     runs-on: ubuntu-latest
     strategy:
       matrix:
         lua: [lua=5.1, lua=5.2, lua=5.3, lua=5.4, luajit=2.0, luajit=@v2.1.ROLLING]
     steps:
+      - name: Fail on Draft PRs
+        if: github.event.pull_request.draft == true
+        run: exit 1
+    
       # Checks-out the repository under $GITHUB_WORKSPACE.
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
