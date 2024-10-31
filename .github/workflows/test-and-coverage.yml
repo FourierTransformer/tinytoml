@@ -33,10 +33,10 @@ jobs:
           luarocks install luacov
           luarocks install luacov-coveralls
           
-      - name: run unit tests with coverage
+      - name: run toml-test with coverage
         continue-on-error: true
         run: |
-          toml-test -- lua_install/bin/lua -lluacov spec/toml-test.lua
+          toml-test -parallel 1 -- lua_install/bin/lua -lluacov spec/toml-test.lua
           
       - name: Report test coverage
         if: success()
