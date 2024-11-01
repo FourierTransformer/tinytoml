@@ -46,12 +46,24 @@ There are a few parsing options available that are passed in the the `options` p
 - `type_conversion`
 
   allows registering a function to perform type conversions from the raw string to a custom representation. TOML requires them all the be RFC3339 compliant, and the strings are already verified when this function is called. The `type_conversion` option currently supports the various datetime types:
-  - `datetime` - includes TZ (`2024-10-31T12:49:00Z`)
-  - `datetime-local` - no TZ (`2024-10-31T12:49:00`)
+  - `datetime` - includes TZ (`2024-10-31T12:49:00Z` or `2024-10-31T19:49:00+07:00`)
+  - `datetime-local` - no TZ (`2024-10-31T12:49:00`), cannot pinpoint to a specific instant in time
   - `date-local` - Just the date (`2024-10-31`)
   - `time-local` - Just the time (`12:49:00`)
 
-  For example, if you wanted to use [luatz](https://github.com/daurnimator/luatz) for handling datetimes:
+  For example, if you wanted to use [date](https://github.com/Tieske/date) for handling datetime:
+  ```lua
+  local date = require("date")
+  local type_conversion = {
+    ["datetime"] = date,
+    ["datetime-local"] = date, --date will assume UTC
+    ["date-local"] = date,
+    ["time-local"] = date,
+  }
+  tinytoml.parse("a=2024-10-31T12:49:00Z", {load_from_string=true, type_conversion=type_conversion})
+  ```
+
+  or [luatz](https://github.com/daurnimator/luatz) for handling datetimes:
   ```lua
   local luatz = require("luatz")
   local type_conversion = {
