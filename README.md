@@ -16,7 +16,11 @@ Current Supported TOML Version: 1.0.0
 - Cannot encode a table to TOML
 
 ## Installing
-You can grab the `tinytoml.lua` file from this repo (or the `tinytoml.tl` file if using Teal)
+You can grab the `tinytoml.lua` file from this repo (or the `tinytoml.tl` file if using Teal) or install it via LuaRocks
+
+```
+luarocks install tinytoml
+```
 
 ## Parsing TOML
 
