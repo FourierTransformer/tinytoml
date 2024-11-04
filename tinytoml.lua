@@ -162,32 +162,27 @@ end
 
 
 local _unpack = unpack or table.unpack
-local utf8char
+local _tointeger = math.tointeger or tonumber
 
-if (tonumber((_VERSION or ''):match('[%d.]*$')) or 0) < 5.3 then
-
-   utf8char = function(cp)
-      if cp < 128 then
-         return string.char(cp)
-      end
-      local suffix = cp % 64
-      local c4 = 128 + suffix
-      cp = (cp - suffix) / 64
-      if cp < 32 then
-         return string.char(192 + (cp), (c4))
-      end
-      suffix = cp % 64
-      local c3 = 128 + suffix
-      cp = (cp - suffix) / 64
-      if cp < 16 then
-         return string.char(224 + (cp), c3, c4)
-      end
-      suffix = cp % 64
-      cp = (cp - suffix) / 64
-      return string.char(240 + (cp), 128 + (suffix), c3, c4)
+local _utf8char = utf8 and utf8.char or function(cp)
+   if cp < 128 then
+      return string.char(cp)
    end
-else
-   utf8char = utf8.char
+   local suffix = cp % 64
+   local c4 = 128 + suffix
+   cp = (cp - suffix) / 64
+   if cp < 32 then
+      return string.char(192 + (cp), (c4))
+   end
+   suffix = cp % 64
+   local c3 = 128 + suffix
+   cp = (cp - suffix) / 64
+   if cp < 16 then
+      return string.char(224 + (cp), c3, c4)
+   end
+   suffix = cp % 64
+   cp = (cp - suffix) / 64
+   return string.char(240 + (cp), 128 + (suffix), c3, c4)
 end
 
 local function validate_utf8(input, toml_sub)
@@ -307,7 +302,7 @@ local function handle_backslash_escape(sm)
 
       if (sm.match == "u" and #sm.ext == 4) or
          (sm.match == "U" and #sm.ext == 8) then
-         local codepoint_to_insert = utf8char(tonumber(sm.ext, 16))
+         local codepoint_to_insert = _utf8char(tonumber(sm.ext, 16))
          if not validate_utf8(codepoint_to_insert) then
             _error(sm, "Escaped UTF-8 sequence not valid UTF-8 character: \\" .. sm.match .. sm.ext, "string")
          end
@@ -505,7 +500,7 @@ local function validate_integer(sm, value)
    if sm.match then
       if sm.match:find("^[-+]?0[%d_]") then _error(sm, "Integers can't start with a leading 0. Found integer: " .. sm.match, "integer") end
       sm.match = remove_underscores_number(sm, sm.match, "integer")
-      sm.value = tonumber(sm.match)
+      sm.value = _tointeger(sm.match)
       sm.value_type = "integer"
       return true
    end
@@ -558,9 +553,9 @@ local function validate_datetime(sm, value)
    local hour, min, sec
    sm._, sm._, sm.match, hour, min, sec, sm.ext = value:find("^((%d%d):(%d%d):(%d%d))(.*)$")
    if sm.match then
-      if tonumber(hour) > 23 then _error(sm, "Hours must be less than 24. Found hour: " .. hour .. "in: " .. sm.match, "local-time") end
-      if tonumber(min) > 59 then _error(sm, "Minutes must be less than 60. Found minute: " .. min .. "in: " .. sm.match, "local-time") end
-      if tonumber(sec) > 60 then _error(sm, "Seconds must be less than 61. Found second: " .. sec .. "in: " .. sm.match, "local-time") end
+      if _tointeger(hour) > 23 then _error(sm, "Hours must be less than 24. Found hour: " .. hour .. "in: " .. sm.match, "local-time") end
+      if _tointeger(min) > 59 then _error(sm, "Minutes must be less than 60. Found minute: " .. min .. "in: " .. sm.match, "local-time") end
+      if _tointeger(sec) > 60 then _error(sm, "Seconds must be less than 61. Found second: " .. sec .. "in: " .. sm.match, "local-time") end
       if sm.ext ~= "" then
          if sm.ext:find("^%.%d+$") then
             sm.value_type = "time-local"
@@ -578,7 +573,7 @@ local function validate_datetime(sm, value)
    local year, month, day
    sm._, sm._, sm.match, year_s, month_s, day_s = value:find("^((%d%d%d%d)%-(%d%d)%-(%d%d))$")
    if sm.match then
-      year, month, day = tonumber(year_s), tonumber(month_s), tonumber(day_s)
+      year, month, day = _tointeger(year_s), _tointeger(month_s), _tointeger(day_s)
       if month == 0 or month > 12 then _error(sm, "Month must be between 01-12. Found month: " .. month .. "in: " .. sm.match, "local-date") end
       if day == 0 or day > max_days_in_month[month] then _error(sm, "Too many days in the month. Found " .. day .. " days in month " .. month .. ", which only has " .. max_days_in_month[month] .. " days in: " .. sm.match, "local-date") end
       if month == 2 then
@@ -607,10 +602,10 @@ local function validate_datetime(sm, value)
    value:find("^((%d%d%d%d)%-(%d%d)%-(%d%d)[Tt ](%d%d):(%d%d):(%d%d))(.*)$")
 
    if sm.match then
-      if tonumber(hour) > 23 then _error(sm, "Hours must be less than 24. Found hour: " .. hour .. "in: " .. sm.match, "") end
-      if tonumber(min) > 59 then _error(sm, "Minutes must be less than 60. Found minute: " .. min .. "in: " .. sm.match) end
-      if tonumber(sec) > 60 then _error(sm, "Seconds must be less than 61. Found second: " .. sec .. "in: " .. sm.match) end
-      year, month, day = tonumber(year_s), tonumber(month_s), tonumber(day_s)
+      if _tointeger(hour) > 23 then _error(sm, "Hours must be less than 24. Found hour: " .. hour .. "in: " .. sm.match, "") end
+      if _tointeger(min) > 59 then _error(sm, "Minutes must be less than 60. Found minute: " .. min .. "in: " .. sm.match) end
+      if _tointeger(sec) > 60 then _error(sm, "Seconds must be less than 61. Found second: " .. sec .. "in: " .. sm.match) end
+      year, month, day = _tointeger(year_s), _tointeger(month_s), _tointeger(day_s)
       if month == 0 or month > 12 then _error(sm, "Month must be between 01-12. Found month: " .. month .. "in: " .. sm.match) end
       if day == 0 or day > max_days_in_month[month] then _error(sm, "Too many days in the month. Found " .. day .. " days in month " .. month .. ", which only has " .. max_days_in_month[month] .. " days in: " .. sm.match, "local-datetime") end
       if month == 2 then
@@ -632,8 +627,8 @@ local function validate_datetime(sm, value)
             return true
          elseif sm.ext:find("^%.%d+[+-]%d%d:%d%d$") then
             sm._, sm.end_seq, hour, min = sm.ext:find("^%.%d+[+-](%d%d):(%d%d)$")
-            if tonumber(hour) > 23 then _error(sm, "Hours must be less than 24. Found hour: " .. hour .. "in: " .. sm.match, "offset-date-time") end
-            if tonumber(min) > 59 then _error(sm, "Minutes must be less than 60. Found minute: " .. min .. "in: " .. sm.match, "offset-date-time") end
+            if _tointeger(hour) > 23 then _error(sm, "Hours must be less than 24. Found hour: " .. hour .. "in: " .. sm.match, "offset-date-time") end
+            if _tointeger(min) > 59 then _error(sm, "Minutes must be less than 60. Found minute: " .. min .. "in: " .. sm.match, "offset-date-time") end
             sm.value_type = "datetime"
             sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext:sub(1, 4))
             return true
@@ -643,8 +638,8 @@ local function validate_datetime(sm, value)
             return true
          elseif sm.ext:find("^[+-]%d%d:%d%d$") then
             sm._, sm.end_seq, hour, min = sm.ext:find("^[+-](%d%d):(%d%d)$")
-            if tonumber(hour) > 23 then _error(sm, "Hours must be less than 24. Found hour: " .. hour .. "in: " .. sm.match, "offset-date-time") end
-            if tonumber(min) > 59 then _error(sm, "Minutes must be less than 60. Found minute: " .. min .. "in: " .. sm.match, "offset-date-time") end
+            if _tointeger(hour) > 23 then _error(sm, "Hours must be less than 24. Found hour: " .. hour .. "in: " .. sm.match, "offset-date-time") end
+            if _tointeger(min) > 59 then _error(sm, "Minutes must be less than 60. Found minute: " .. min .. "in: " .. sm.match, "offset-date-time") end
             sm.value_type = "datetime"
             sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
             return true
