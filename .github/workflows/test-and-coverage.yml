@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        lua: [lua=5.1, lua=5.2, lua=5.3, lua=5.4, luajit=2.0, luajit=@v2.1.ROLLING]
+        lua: [lua=5.1, lua=5.2, lua=5.3, lua=5.4, luajit=2.0, luajit=@v2.1]
     steps:
       - name: Fail on Draft PRs
         if: github.event.pull_request.draft == true
