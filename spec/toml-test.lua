@@ -9,7 +9,7 @@ local to_inf_and_beyound = {
 }
 
 
-local function floatToString(x)
+local function float_to_string(x)
 
 
    if to_inf_and_beyound[tostring(x)] then
@@ -28,7 +28,7 @@ end
 
 local assign_value_function = function(value, value_type)
    if value_type == "float" then
-      return { ["value"] = floatToString(value), ["type"] = value_type }
+      return { ["value"] = float_to_string(value), ["type"] = value_type }
    else
       return { ["value"] = tostring(value), ["type"] = value_type }
    end

@@ -9,7 +9,7 @@ local to_inf_and_beyound = {
 }
 
 -- Using a slightly modified version from https://stackoverflow.com/a/69827191
-local function floatToString(x)
+local function float_to_string(x)
    -- a table key can't be nan in Lua, and I would've rather checked for equality with
    -- math.huge/nan (as 0/0), but (0/0) != (0/0) in Lua so I think this is probably fine.
    if to_inf_and_beyound[tostring(x)] then
@@ -28,7 +28,7 @@ end
 -- the format toml-test expects
 local assign_value_function = function(value: any, value_type?: string): any 
    if value_type == "float" then
-      return {["value"]=floatToString(value), ["type"]=value_type}
+      return {["value"]=float_to_string(value), ["type"]=value_type}
    else
       return {["value"]=tostring(value), ["type"]=value_type} 
    end
