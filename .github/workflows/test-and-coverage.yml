@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        lua: [lua=5.1, lua=5.2, lua=5.3, lua=5.4, luajit=2.0, luajit=@v2.1]
+        lua: [lua=5.1, lua=5.2, lua=5.3, lua=5.4, luajit=@v2.0, luajit=@v2.1]
     steps:
       - name: Fail on Draft PRs
         if: github.event.pull_request.draft == true
@@ -22,6 +22,9 @@ jobs:
         with:
           go-version: '>=1.19'
 
+      - name: Install libreadline
+        run: sudo apt-get install -y libreadline-dev
+
       - name: Install Lua (${{ matrix.lua }})
         run: |
           pip install hererocks
@@ -29,7 +32,7 @@ jobs:
           echo lua_install/bin >> $GITHUB_PATH
 
       - name: Install toml-test
-        run: go install github.com/toml-lang/toml-test/cmd/toml-test@v1.5.0
+        run: go install github.com/toml-lang/toml-test/cmd/toml-test@v1.6.0
     
       - name: install depedencies
         run: |
