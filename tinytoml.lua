@@ -297,18 +297,18 @@ local function handle_backslash_escape(sm)
    end
 
 
-   sm._, sm.end_seq, sm.match, sm.ext = sm.input:find("^([uU])([0-9a-fA-F]+)", sm.i + 1)
-   if sm.match then
 
-      if (sm.match == "u" and #sm.ext == 4) or
-         (sm.match == "U" and #sm.ext == 8) then
-         local codepoint_to_insert = _utf8char(tonumber(sm.ext, 16))
-         if not validate_utf8(codepoint_to_insert) then
-            _error(sm, "Escaped UTF-8 sequence not valid UTF-8 character: \\" .. sm.match .. sm.ext, "string")
-         end
-         sm.i = sm.end_seq
-         return codepoint_to_insert, false
+   sm._, sm.end_seq, sm.match, sm.ext = sm.input:find("^(u)([0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])", sm.i + 1)
+   if not sm.match then
+      sm._, sm.end_seq, sm.match, sm.ext = sm.input:find("^(U)([0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])", sm.i + 1)
+   end
+   if sm.match then
+      local codepoint_to_insert = _utf8char(tonumber(sm.ext, 16))
+      if not validate_utf8(codepoint_to_insert) then
+         _error(sm, "Escaped UTF-8 sequence not valid UTF-8 character: \\" .. sm.match .. sm.ext, "string")
       end
+      sm.i = sm.end_seq
+      return codepoint_to_insert, false
    end
 
    return nil
@@ -1084,6 +1084,10 @@ function tinytoml.parse(filename, options)
    local dynamic_next_mode = "start_of_line"
    local transition = nil
    sm._, sm.i = sm.input:find("[^ \t]", sm.i)
+
+
+   if not sm.i then return {} end
+
    while sm.i <= sm.input_length do
       sm.byte = sbyte(sm.input, sm.i)
 
