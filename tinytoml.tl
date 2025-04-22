@@ -297,18 +297,18 @@ local function handle_backslash_escape(sm: StateMachine): string, boolean
     end
 
     -- unicode escape sequences
-    sm._, sm.end_seq, sm.match, sm.ext = sm.input:find("^([uU])([0-9a-fA-F]+)", sm.i+1) as (integer, integer, string, string)
+    -- hex escapes coming in toml 1.1.0, will need to update
+    sm._, sm.end_seq, sm.match, sm.ext = sm.input:find("^(u)([0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])", sm.i+1) as (integer, integer, string)
+    if not sm.match then
+        sm._, sm.end_seq, sm.match, sm.ext = sm.input:find("^(U)([0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])", sm.i+1) as (integer, integer, string, string)
+    end
     if sm.match then
-        --if (sm.match == "x" and #sm.ext == 2) or -- hex escapes coming in toml 1.1.0, will need to update pattern in :find above as well
-        if (sm.match == "u" and #sm.ext == 4) or
-           (sm.match == "U" and #sm.ext == 8) then
-            local codepoint_to_insert = _utf8char(tonumber(sm.ext, 16))
-            if not validate_utf8(codepoint_to_insert) then
-                _error(sm, "Escaped UTF-8 sequence not valid UTF-8 character: \\" .. sm.match .. sm.ext, "string")
-            end
-            sm.i = sm.end_seq
-            return codepoint_to_insert, false
+        local codepoint_to_insert = _utf8char(tonumber(sm.ext, 16))
+        if not validate_utf8(codepoint_to_insert) then
+            _error(sm, "Escaped UTF-8 sequence not valid UTF-8 character: \\" .. sm.match .. sm.ext, "string")
         end
+        sm.i = sm.end_seq
+        return codepoint_to_insert, false
     end
 
     return nil
@@ -1084,6 +1084,10 @@ function tinytoml.parse(filename: string, options?: TinyTomlOptions): {string:an
     local dynamic_next_mode: states = "start_of_line"
     local transition: {function, string} = nil
     sm._, sm.i = sm.input:find("[^ \t]", sm.i)
+
+    -- just an file with whitespace and nothing else...
+    if not sm.i then return {} end
+    
     while sm.i <= sm.input_length do
         sm.byte = sbyte(sm.input, sm.i)
 
