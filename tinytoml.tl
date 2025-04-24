@@ -298,7 +298,7 @@ local function handle_backslash_escape(sm: StateMachine): string, boolean
 
     -- unicode escape sequences
     -- hex escapes coming in toml 1.1.0, will need to update
-    sm._, sm.end_seq, sm.match, sm.ext = sm.input:find("^(u)([0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])", sm.i+1) as (integer, integer, string)
+    sm._, sm.end_seq, sm.match, sm.ext = sm.input:find("^(u)([0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])", sm.i+1) as (integer, integer, string, string)
     if not sm.match then
         sm._, sm.end_seq, sm.match, sm.ext = sm.input:find("^(U)([0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])", sm.i+1) as (integer, integer, string, string)
     end
