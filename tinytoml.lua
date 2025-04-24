@@ -19,7 +19,7 @@ local tinytoml = {}
 
 
 
-tinytoml._VERSION = "tinytoml 0.0.1"
+tinytoml._VERSION = "tinytoml 0.0.4"
 tinytoml._DESCRIPTION = "a single-file pure Lua TOML parser"
 tinytoml._URL = "https://github.com/FourierTransformer/tinytoml"
 tinytoml._LICENSE = "MIT"
@@ -326,6 +326,7 @@ local function close_string(sm)
 
 
    if second == chars.DOUBLE_QUOTE and third == chars.DOUBLE_QUOTE then
+      if sm.mode == "table" then _error(sm, "Cannot have multiline strings as table keys", "table") end
       sm.multiline_string = true
       start_field = sm.i + 3
 
@@ -411,6 +412,7 @@ local function close_literal_string(sm)
 
 
    if second == chars.SINGLE_QUOTE and third == chars.SINGLE_QUOTE then
+      if sm.mode == "table" then _error(sm, "Cannot have multiline strings as table keys", "table") end
       sm.multiline_string = true
       start_field = sm.i + 3
 
@@ -619,18 +621,18 @@ local function validate_datetime(sm, value)
 
          if sm.ext:find("^%.%d+$") then
             sm.value_type = "datetime-local"
-            sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext:sub(1, 4))
+            sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
             return true
          elseif sm.ext:find("^%.%d+Z$") then
             sm.value_type = "datetime"
-            sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext:sub(1, 4))
+            sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
             return true
          elseif sm.ext:find("^%.%d+[+-]%d%d:%d%d$") then
             sm._, sm.end_seq, hour, min = sm.ext:find("^%.%d+[+-](%d%d):(%d%d)$")
             if _tointeger(hour) > 23 then _error(sm, "Hours must be less than 24. Found hour: " .. hour .. "in: " .. sm.match, "offset-date-time") end
             if _tointeger(min) > 59 then _error(sm, "Minutes must be less than 60. Found minute: " .. min .. "in: " .. sm.match, "offset-date-time") end
             sm.value_type = "datetime"
-            sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext:sub(1, 4))
+            sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
             return true
          elseif sm.ext:find("^[Zz]$") then
             sm.value_type = "datetime"

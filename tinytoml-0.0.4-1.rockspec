@@ -1,9 +1,9 @@
 package = "tinytoml"
-version = "0.0.3-1"
+version = "0.0.4-1"
 
 source = {
     url = "git://github.com/FourierTransformer/tinytoml.git",
-    tag = "0.0.3"
+    tag = "0.0.4"
 }
 
 description = {
@@ -32,3 +32,4 @@ build = {
         }
     }
 }
+

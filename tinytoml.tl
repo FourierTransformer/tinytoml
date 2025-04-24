@@ -19,7 +19,7 @@ local record tinytoml
     _LICENSE: string
 end
 
-tinytoml._VERSION = "tinytoml 0.0.1"
+tinytoml._VERSION = "tinytoml 0.0.4"
 tinytoml._DESCRIPTION = "a single-file pure Lua TOML parser"
 tinytoml._URL = "https://github.com/FourierTransformer/tinytoml"
 tinytoml._LICENSE = "MIT"
@@ -298,7 +298,7 @@ local function handle_backslash_escape(sm: StateMachine): string, boolean
 
     -- unicode escape sequences
     -- hex escapes coming in toml 1.1.0, will need to update
-    sm._, sm.end_seq, sm.match, sm.ext = sm.input:find("^(u)([0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])", sm.i+1) as (integer, integer, string)
+    sm._, sm.end_seq, sm.match, sm.ext = sm.input:find("^(u)([0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])", sm.i+1) as (integer, integer, string, string)
     if not sm.match then
         sm._, sm.end_seq, sm.match, sm.ext = sm.input:find("^(U)([0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])", sm.i+1) as (integer, integer, string, string)
     end
@@ -326,6 +326,7 @@ local function close_string(sm: StateMachine)
 
     -- check for multiline and setup accordingly
     if second == chars.DOUBLE_QUOTE and third == chars.DOUBLE_QUOTE then
+        if sm.mode == "table" then _error(sm, "Cannot have multiline strings as table keys", "table") end
         sm.multiline_string = true
         start_field = sm.i + 3
         -- toml allows a newline at the beginning of a triple quote
@@ -411,6 +412,7 @@ local function close_literal_string(sm: StateMachine)
 
     -- check for multiline and setup accordingly
     if second == chars.SINGLE_QUOTE and third == chars.SINGLE_QUOTE then
+        if sm.mode == "table" then _error(sm, "Cannot have multiline strings as table keys", "table") end
         sm.multiline_string = true
         start_field = sm.i + 3
         -- toml allows a newline at the beginning of a triple quote
@@ -619,18 +621,18 @@ local function validate_datetime(sm: StateMachine, value: string): boolean
             --TODO: maybe refactor at some point?
             if sm.ext:find("^%.%d+$") then
                 sm.value_type = "datetime-local"
-               sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext:sub(1, 4))
+               sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
                 return true
             elseif sm.ext:find("^%.%d+Z$") then
                 sm.value_type = "datetime"
-                sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext:sub(1, 4))
+                sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
                 return true
             elseif sm.ext:find("^%.%d+[+-]%d%d:%d%d$") then
                 sm._, sm.end_seq, hour, min = sm.ext:find("^%.%d+[+-](%d%d):(%d%d)$") as (integer, integer, string, string)
                 if _tointeger(hour) > 23 then _error(sm, "Hours must be less than 24. Found hour: " .. hour .. "in: " .. sm.match, "offset-date-time") end
                 if _tointeger(min) > 59 then _error(sm, "Minutes must be less than 60. Found minute: " .. min .. "in: " .. sm.match, "offset-date-time") end
                 sm.value_type = "datetime"
-                sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext:sub(1, 4))
+                sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
                 return true
             elseif sm.ext:find("^[Zz]$") then
                 sm.value_type = "datetime"
