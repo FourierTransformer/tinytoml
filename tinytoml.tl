@@ -326,6 +326,7 @@ local function close_string(sm: StateMachine)
 
     -- check for multiline and setup accordingly
     if second == chars.DOUBLE_QUOTE and third == chars.DOUBLE_QUOTE then
+        if sm.mode == "table" then _error(sm, "Cannot have multiline strings as table keys", "string") end
         sm.multiline_string = true
         start_field = sm.i + 3
         -- toml allows a newline at the beginning of a triple quote
@@ -411,6 +412,7 @@ local function close_literal_string(sm: StateMachine)
 
     -- check for multiline and setup accordingly
     if second == chars.SINGLE_QUOTE and third == chars.SINGLE_QUOTE then
+        if sm.mode == "table" then _error(sm, "Cannot have multiline strings as table keys", "string") end
         sm.multiline_string = true
         start_field = sm.i + 3
         -- toml allows a newline at the beginning of a triple quote
