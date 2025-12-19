@@ -267,7 +267,7 @@ local escape_sequences = {
    ['n'] = '\n',
    ['f'] = '\f',
    ['r'] = '\r',
-
+   ['e'] = '\027',
    ['\\'] = '\\',
    ['"'] = '"',
 }
@@ -285,7 +285,7 @@ local function handle_backslash_escape(sm)
    end
 
 
-   sm._, sm.end_seq, sm.match = sm.input:find('^([\\btrfn"])', sm.i + 1)
+   sm._, sm.end_seq, sm.match = sm.input:find('^([\\btrfne"])', sm.i + 1)
    local escape = escape_sequences[sm.match]
    if escape then
       sm.i = sm.end_seq
@@ -296,6 +296,16 @@ local function handle_backslash_escape(sm)
       end
    end
 
+
+   sm._, sm.end_seq, sm.match, sm.ext = sm.input:find("^(x)([0-9a-fA-F][0-9a-fA-F])", sm.i + 1)
+   if sm.match then
+      local codepoint_to_insert = _utf8char(tonumber(sm.ext, 16))
+      if not validate_utf8(codepoint_to_insert) then
+         _error(sm, "Escaped UTF-8 sequence not valid UTF-8 character: \\" .. sm.match .. sm.ext, "string")
+      end
+      sm.i = sm.end_seq
+      return codepoint_to_insert, false
+   end
 
 
    sm._, sm.end_seq, sm.match, sm.ext = sm.input:find("^(u)([0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])", sm.i + 1)
@@ -552,21 +562,32 @@ end
 local max_days_in_month = { 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }
 
 local function validate_datetime(sm, value)
+
    local hour, min, sec
-   sm._, sm._, sm.match, hour, min, sec, sm.ext = value:find("^((%d%d):(%d%d):(%d%d))(.*)$")
+   sm._, sm._, sm.match, hour, min, sm.ext = value:find("^((%d%d):(%d%d))(.*)$")
    if sm.match then
       if _tointeger(hour) > 23 then _error(sm, "Hours must be less than 24. Found hour: " .. hour .. "in: " .. sm.match, "local-time") end
       if _tointeger(min) > 59 then _error(sm, "Minutes must be less than 60. Found minute: " .. min .. "in: " .. sm.match, "local-time") end
-      if _tointeger(sec) > 60 then _error(sm, "Seconds must be less than 61. Found second: " .. sec .. "in: " .. sm.match, "local-time") end
+
       if sm.ext ~= "" then
-         if sm.ext:find("^%.%d+$") then
+         sm._, sm._, sec = sm.ext:find("^:(%d%d)$")
+         if sec then
+            if _tointeger(sec) > 60 then _error(sm, "Seconds must be less than 61. Found second: " .. sec .. "in: " .. sm.match, "local-time") end
             sm.value_type = "time-local"
-            sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext:sub(1, 4))
+            sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
+            return true
+         end
+
+         sm._, sm._, sec = sm.ext:find("^:(%d%d)%.%d+$")
+         if sec then
+            if _tointeger(sec) > 60 then _error(sm, "Seconds must be less than 61. Found second: " .. sec .. "in: " .. sm.match, "local-time") end
+            sm.value_type = "time-local"
+            sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
             return true
          end
       else
          sm.value_type = "time-local"
-         sm.value = sm.type_conversion[sm.value_type](sm.match)
+         sm.value = sm.type_conversion[sm.value_type](sm.match .. ":00")
          return true
       end
    end

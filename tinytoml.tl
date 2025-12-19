@@ -267,7 +267,7 @@ local escape_sequences: {string:string} = {
     ['n'] = '\n',
     ['f'] = '\f',
     ['r'] = '\r',
-    --['e'] = '\x1B', -- available in toml 1.1.0, will also need to update close_string
+    ['e'] = '\x1B',
     ['\\'] = '\\',
     ['"'] = '"',
 }
@@ -285,7 +285,7 @@ local function handle_backslash_escape(sm: StateMachine): string, boolean
     end
 
     -- basic escape sequences
-    sm._, sm.end_seq, sm.match = sm.input:find('^([\\btrfn"])', sm.i+1)
+    sm._, sm.end_seq, sm.match = sm.input:find('^([\\btrfne"])', sm.i+1)
     local escape = escape_sequences[sm.match]
     if escape then
         sm.i = sm.end_seq
@@ -296,8 +296,18 @@ local function handle_backslash_escape(sm: StateMachine): string, boolean
         end
     end
 
+    -- hex escape sequences
+    sm._, sm.end_seq, sm.match, sm.ext = sm.input:find("^(x)([0-9a-fA-F][0-9a-fA-F])", sm.i+1) as (integer, integer, string, string)
+    if sm.match then
+        local codepoint_to_insert = _utf8char(tonumber(sm.ext, 16))
+        if not validate_utf8(codepoint_to_insert) then
+            _error(sm, "Escaped UTF-8 sequence not valid UTF-8 character: \\" .. sm.match .. sm.ext, "string")
+        end
+        sm.i = sm.end_seq
+        return codepoint_to_insert, false
+    end
+
     -- unicode escape sequences
-    -- hex escapes coming in toml 1.1.0, will need to update
     sm._, sm.end_seq, sm.match, sm.ext = sm.input:find("^(u)([0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])", sm.i+1) as (integer, integer, string, string)
     if not sm.match then
         sm._, sm.end_seq, sm.match, sm.ext = sm.input:find("^(U)([0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])", sm.i+1) as (integer, integer, string, string)
@@ -552,21 +562,32 @@ end
 local max_days_in_month = {31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}
 
 local function validate_datetime(sm: StateMachine, value: string): boolean
+    
     local hour, min, sec: string, string, string
-    sm._, sm._, sm.match, hour, min, sec, sm.ext = value:find("^((%d%d):(%d%d):(%d%d))(.*)$") as (integer, integer, string, string, string, string, string)
+    sm._, sm._, sm.match, hour, min, sm.ext = value:find("^((%d%d):(%d%d))(.*)$") as (integer, integer, string, string, string, string)
     if sm.match then
         if _tointeger(hour) > 23 then _error(sm, "Hours must be less than 24. Found hour: " .. hour .. "in: " .. sm.match, "local-time") end
         if _tointeger(min) > 59 then _error(sm, "Minutes must be less than 60. Found minute: " .. min .. "in: " .. sm.match, "local-time") end
-        if _tointeger(sec) > 60 then _error(sm, "Seconds must be less than 61. Found second: " .. sec .. "in: " .. sm.match, "local-time") end
+    
         if sm.ext ~= "" then
-            if sm.ext:find("^%.%d+$") then
+            sm._, sm._, sec = sm.ext:find("^:(%d%d)$")
+            if sec then
+                if _tointeger(sec) > 60 then _error(sm, "Seconds must be less than 61. Found second: " .. sec .. "in: " .. sm.match, "local-time") end
                 sm.value_type = "time-local"
-                sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext:sub(1, 4))
+                sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
+                return true
+            end
+
+            sm._, sm._, sec = sm.ext:find("^:(%d%d)%.%d+$")
+            if sec then
+                if _tointeger(sec) > 60 then _error(sm, "Seconds must be less than 61. Found second: " .. sec .. "in: " .. sm.match, "local-time") end
+                sm.value_type = "time-local"
+                sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
                 return true
             end
         else
             sm.value_type = "time-local"
-            sm.value = sm.type_conversion[sm.value_type](sm.match)
+            sm.value = sm.type_conversion[sm.value_type](sm.match .. ":00") -- assume :00 if no seconds are provided
             return true
         end
     end
@@ -621,7 +642,7 @@ local function validate_datetime(sm: StateMachine, value: string): boolean
             --TODO: maybe refactor at some point?
             if sm.ext:find("^%.%d+$") then
                 sm.value_type = "datetime-local"
-               sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
+                sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
                 return true
             elseif sm.ext:find("^%.%d+Z$") then
                 sm.value_type = "datetime"
