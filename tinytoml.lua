@@ -19,11 +19,13 @@ local tinytoml = {}
 
 
 
-tinytoml._VERSION = "tinytoml 0.0.4"
+
+local TOML_VERSION = "1.1.0"
+tinytoml._VERSION = "tinytoml 0.0.5"
+tinytoml._TOML_VERSION = TOML_VERSION
 tinytoml._DESCRIPTION = "a single-file pure Lua TOML parser"
 tinytoml._URL = "https://github.com/FourierTransformer/tinytoml"
 tinytoml._LICENSE = "MIT"
-
 
 
 
@@ -136,10 +138,12 @@ local chars = {
 }
 
 local function _error(sm, message, anchor)
-   local error_message = { "in ", sm.filename, " line ", sm.line_number, ": ", message }
+   local error_message = { "In ", sm.filename, " line ", sm.line_number, ": ", message }
 
    if anchor ~= nil then
-      error_message[#error_message + 1] = "\n\n\t See https://toml.io/en/v1.0.0#"
+      error_message[#error_message + 1] = "\n\n\t See https://toml.io/en/v"
+      error_message[#error_message + 1] = TOML_VERSION
+      error_message[#error_message + 1] = "#"
       error_message[#error_message + 1] = anchor
       error_message[#error_message + 1] = " for more details\n"
    end
@@ -152,7 +156,9 @@ local function _nsmerror(message, input, byte, anchor)
    local error_message = { "on byte ", byte, ": ", message, "\nnear: ", string.sub(input, byte - 25, byte + 25) }
 
    if anchor ~= nil then
-      error_message[#error_message + 1] = "\n\n\t See https://toml.io/en/v1.0.0#"
+      error_message[#error_message + 1] = "\n\n\t See https://toml.io/en/v"
+      error_message[#error_message + 1] = TOML_VERSION
+      error_message[#error_message + 1] = "#"
       error_message[#error_message + 1] = anchor
       error_message[#error_message + 1] = " for more details\n"
    end
@@ -252,13 +258,30 @@ local function validate_utf8(input, toml_sub)
 end
 
 local function find_newline(sm)
-   sm._, sm.end_seq = sm.input:find(".-\r?\n", sm.i)
+   sm._, sm.end_seq = sm.input:find("\r?\n", sm.i)
 
    if sm.end_seq == nil then
       sm._, sm.end_seq = sm.input:find(".-$", sm.i)
    end
    sm.line_number = sm.line_number + 1
    sm.i = sm.end_seq + 1
+end
+
+local function find_next_char(sm)
+
+   if sm.nested_inline_tables == 0 then
+      _error(sm, "Only inline tables allow newline and whitespace characters before key assignment")
+   end
+   find_newline(sm)
+   sm._, sm.end_seq = sm.input:find("[^ \t]", sm.i - 1)
+   sm.i = sm.end_seq + 1
+
+
+
+   sm.byte = sbyte(sm.input, sm.i)
+   if sm.byte == chars.COMMA then
+      sm.i = sm.i + 1
+   end
 end
 
 local escape_sequences = {
@@ -562,7 +585,6 @@ end
 local max_days_in_month = { 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }
 
 local function validate_datetime(sm, value)
-
    local hour, min, sec
    sm._, sm._, sm.match, hour, min, sm.ext = value:find("^((%d%d):(%d%d))(.*)$")
    if sm.match then
@@ -611,8 +633,8 @@ local function validate_datetime(sm, value)
 
 
       local potential_end_seq
-      sm._, potential_end_seq, sm.match = sm.input:find("^ ([%S]+)", sm.i)
-      if sm.match and sm.match:find("^%d%d:%d%d:%d%d") then
+      if sm.input:find("^ %d", sm.i) then
+         sm._, potential_end_seq, sm.match = sm.input:find("^ ([%S]+)", sm.i)
          value = value .. " " .. sm.match
          sm.end_seq = potential_end_seq
          sm.i = sm.end_seq + 1
@@ -621,13 +643,12 @@ local function validate_datetime(sm, value)
       end
    end
 
-   sm._, sm._, sm.match, year_s, month_s, day_s, hour, min, sec, sm.ext =
-   value:find("^((%d%d%d%d)%-(%d%d)%-(%d%d)[Tt ](%d%d):(%d%d):(%d%d))(.*)$")
+   sm._, sm._, sm.match, year_s, month_s, day_s, hour, min, sm.ext =
+   value:find("^((%d%d%d%d)%-(%d%d)%-(%d%d)[Tt ](%d%d):(%d%d))(.*)$")
 
    if sm.match then
       if _tointeger(hour) > 23 then _error(sm, "Hours must be less than 24. Found hour: " .. hour .. "in: " .. sm.match, "") end
       if _tointeger(min) > 59 then _error(sm, "Minutes must be less than 60. Found minute: " .. min .. "in: " .. sm.match) end
-      if _tointeger(sec) > 60 then _error(sm, "Seconds must be less than 61. Found second: " .. sec .. "in: " .. sm.match) end
       year, month, day = _tointeger(year_s), _tointeger(month_s), _tointeger(day_s)
       if month == 0 or month > 12 then _error(sm, "Month must be between 01-12. Found month: " .. month .. "in: " .. sm.match) end
       if day == 0 or day > max_days_in_month[month] then _error(sm, "Too many days in the month. Found " .. day .. " days in month " .. month .. ", which only has " .. max_days_in_month[month] .. " days in: " .. sm.match, "local-datetime") end
@@ -637,6 +658,18 @@ local function validate_datetime(sm, value)
             if day > 28 then _error(sm, "Too many days in month. Found " .. day .. " days in month 02, which only has 28 day if it's not a leap year in: " .. sm.match, "local-datetime") end
          end
       end
+
+
+      local temp_ext
+      sm._, sm._, sec, temp_ext = sm.ext:find("^:(%d%d)(.*)$")
+      if sec then
+         if _tointeger(sec) > 60 then _error(sm, "Seconds must be less than 61. Found second: " .. sec .. "in: " .. sm.match) end
+         sm.match = sm.match .. ":" .. sec
+         sm.ext = temp_ext
+      else
+         sm.match = sm.match .. ":00"
+      end
+
 
       if sm.ext ~= "" then
 
@@ -983,6 +1016,7 @@ local transitions = {
       [sbyte("'")] = { close_literal_string, "inside_key" },
       [sbyte("[")] = { create_table, "table" },
       [sbyte("=")] = { error_invalid_state, "error" },
+      [sbyte("}")] = { close_inline_table, "?" },
       [0] = { close_bare_string, "inside_key" },
    },
    ["table"] = {
@@ -999,6 +1033,9 @@ local transitions = {
       [sbyte('"')] = { close_string, "inside_key" },
       [sbyte("'")] = { close_literal_string, "inside_key" },
       [sbyte("}")] = { close_inline_table, "?" },
+      [sbyte("\r")] = { find_next_char, "key" },
+      [sbyte("\n")] = { find_next_char, "key" },
+      [sbyte("#")] = { find_newline, "key" },
       [0] = { close_bare_string, "inside_key" },
    },
    ["inside_key"] = {
