@@ -6,9 +6,8 @@ tinytoml is a pure Lua [TOML](https://toml.io) parsing library. It's written in 
 tinytoml passes all the [toml-test](https://github.com/toml-lang/toml-test) [use cases](https://toml-lang.github.io/toml-test-matrix/) that Lua can realistically pass (even the UTF-8 ones!). The few that fail are mostly representational:
 - Lua doesn't differentiate between an array or a dictionary, so tests involving _empty_ arrays fail.
 - Some Lua versions have differences in how numbers are represented. Lua 5.3 introduced integers, so tests involving integer representation pass on newer versions.
-- tinytoml currently support trailing commas in arrays/inline-tables. This is coming in TOML 1.1.0.
 
-Current Supported TOML Version: 1.0.0
+Current Supported TOML Version: 1.1.0
 
 ## Missing Features
 - Cannot encode a table to TOML
