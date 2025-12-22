@@ -14,12 +14,15 @@ end
 local record tinytoml
     parse: function(filename: string, options?: TinyTomlOptions): {string: any}
     _VERSION: string
+    _TOML_VERSION: string
     _DESCRIPTION: string
     _URL: string
     _LICENSE: string
 end
 
-tinytoml._VERSION = "tinytoml 0.0.4"
+local TOML_VERSION = "1.1.0"
+tinytoml._VERSION = "tinytoml 0.1.0"
+tinytoml._TOML_VERSION = TOML_VERSION
 tinytoml._DESCRIPTION = "a single-file pure Lua TOML parser"
 tinytoml._URL = "https://github.com/FourierTransformer/tinytoml"
 tinytoml._LICENSE = "MIT"
@@ -28,7 +31,6 @@ local enum TomlType
     -- my types (users should not interact with these)
     "array"
     "inline-table"
-
     "string"
     "integer"
     "float"
@@ -65,6 +67,7 @@ local enum states
     "inline_table"
     "inside_inline_table"
     "error"
+    "wait_for_key"
     "wait_for_newline"
     "?" -- function decides next state
 end
@@ -136,10 +139,12 @@ local chars: {string:integer} = {
 }
 
 local function _error(sm: StateMachine, message: string, anchor?: string)
-    local error_message = {"in ", sm.filename, " line ", sm.line_number, ": ", message}
+    local error_message = {"In ", sm.filename, " line ", sm.line_number, ": ", message}
 
     if anchor ~= nil then
-        error_message[#error_message + 1] = "\n\n\t See https://toml.io/en/v1.0.0#"
+        error_message[#error_message + 1] = "\n\n\t See https://toml.io/en/v"
+        error_message[#error_message + 1] = TOML_VERSION
+        error_message[#error_message + 1] = "#"
         error_message[#error_message + 1] = anchor
         error_message[#error_message + 1] = " for more details\n"
     end
@@ -152,7 +157,9 @@ local function _nsmerror(message: string, input: string, byte: integer, anchor?:
     local error_message = {"on byte ", byte, ": ", message, "\nnear: ", string.sub(input, byte-25, byte+25)}
 
     if anchor ~= nil then
-        error_message[#error_message + 1] = "\n\n\t See https://toml.io/en/v1.0.0#"
+        error_message[#error_message + 1] = "\n\n\t See https://toml.io/en/v"
+        error_message[#error_message + 1] = TOML_VERSION
+        error_message[#error_message + 1] = "#"
         error_message[#error_message + 1] = anchor
         error_message[#error_message + 1] = " for more details\n"
     end
@@ -252,7 +259,7 @@ local function validate_utf8(input: string, toml_sub?: boolean): boolean, intege
 end
 
 local function find_newline(sm: StateMachine)
-    sm._, sm.end_seq = sm.input:find(".-\r?\n", sm.i)
+    sm._, sm.end_seq = sm.input:find("\r?\n", sm.i)
     -- likely at end of script
     if sm.end_seq == nil then
         sm._, sm.end_seq = sm.input:find(".-$", sm.i)
@@ -267,7 +274,7 @@ local escape_sequences: {string:string} = {
     ['n'] = '\n',
     ['f'] = '\f',
     ['r'] = '\r',
-    --['e'] = '\x1B', -- available in toml 1.1.0, will also need to update close_string
+    ['e'] = '\x1B',
     ['\\'] = '\\',
     ['"'] = '"',
 }
@@ -285,7 +292,7 @@ local function handle_backslash_escape(sm: StateMachine): string, boolean
     end
 
     -- basic escape sequences
-    sm._, sm.end_seq, sm.match = sm.input:find('^([\\btrfn"])', sm.i+1)
+    sm._, sm.end_seq, sm.match = sm.input:find('^([\\btrfne"])', sm.i+1)
     local escape = escape_sequences[sm.match]
     if escape then
         sm.i = sm.end_seq
@@ -296,8 +303,18 @@ local function handle_backslash_escape(sm: StateMachine): string, boolean
         end
     end
 
+    -- hex escape sequences
+    sm._, sm.end_seq, sm.match, sm.ext = sm.input:find("^(x)([0-9a-fA-F][0-9a-fA-F])", sm.i+1) as (integer, integer, string, string)
+    if sm.match then
+        local codepoint_to_insert = _utf8char(tonumber(sm.ext, 16))
+        if not validate_utf8(codepoint_to_insert) then
+            _error(sm, "Escaped UTF-8 sequence not valid UTF-8 character: \\" .. sm.match .. sm.ext, "string")
+        end
+        sm.i = sm.end_seq
+        return codepoint_to_insert, false
+    end
+
     -- unicode escape sequences
-    -- hex escapes coming in toml 1.1.0, will need to update
     sm._, sm.end_seq, sm.match, sm.ext = sm.input:find("^(u)([0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])", sm.i+1) as (integer, integer, string, string)
     if not sm.match then
         sm._, sm.end_seq, sm.match, sm.ext = sm.input:find("^(U)([0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F])", sm.i+1) as (integer, integer, string, string)
@@ -553,20 +570,30 @@ local max_days_in_month = {31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}
 
 local function validate_datetime(sm: StateMachine, value: string): boolean
     local hour, min, sec: string, string, string
-    sm._, sm._, sm.match, hour, min, sec, sm.ext = value:find("^((%d%d):(%d%d):(%d%d))(.*)$") as (integer, integer, string, string, string, string, string)
+    sm._, sm._, sm.match, hour, min, sm.ext = value:find("^((%d%d):(%d%d))(.*)$") as (integer, integer, string, string, string, string)
     if sm.match then
         if _tointeger(hour) > 23 then _error(sm, "Hours must be less than 24. Found hour: " .. hour .. "in: " .. sm.match, "local-time") end
         if _tointeger(min) > 59 then _error(sm, "Minutes must be less than 60. Found minute: " .. min .. "in: " .. sm.match, "local-time") end
-        if _tointeger(sec) > 60 then _error(sm, "Seconds must be less than 61. Found second: " .. sec .. "in: " .. sm.match, "local-time") end
+    
         if sm.ext ~= "" then
-            if sm.ext:find("^%.%d+$") then
+            sm._, sm._, sec = sm.ext:find("^:(%d%d)$")
+            if sec then
+                if _tointeger(sec) > 60 then _error(sm, "Seconds must be less than 61. Found second: " .. sec .. "in: " .. sm.match, "local-time") end
                 sm.value_type = "time-local"
-                sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext:sub(1, 4))
+                sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
+                return true
+            end
+
+            sm._, sm._, sec = sm.ext:find("^:(%d%d)%.%d+$")
+            if sec then
+                if _tointeger(sec) > 60 then _error(sm, "Seconds must be less than 61. Found second: " .. sec .. "in: " .. sm.match, "local-time") end
+                sm.value_type = "time-local"
+                sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
                 return true
             end
         else
             sm.value_type = "time-local"
-            sm.value = sm.type_conversion[sm.value_type](sm.match)
+            sm.value = sm.type_conversion[sm.value_type](sm.match .. ":00") -- assume :00 if no seconds are provided
             return true
         end
     end
@@ -588,10 +615,13 @@ local function validate_datetime(sm: StateMachine, value: string): boolean
         sm.value = sm.type_conversion[sm.value_type](sm.match)
 
         -- small hack that allows datetimes with spaces to work
-        -- does involve updating the current pointer if there is a match
+        -- does involve updating the current position in a validator...
         local potential_end_seq: integer
-        sm._, potential_end_seq, sm.match = sm.input:find("^ ([%S]+)", sm.i)
-        if sm.match and sm.match:find("^%d%d:%d%d:%d%d") then
+
+        -- yes, this find is little quick and greedy, but even if we match and
+        -- it's not a real datetime, we'll generate an error message
+        if sm.input:find("^ %d", sm.i) then
+            sm._, potential_end_seq, sm.match = sm.input:find("^ ([%S]+)", sm.i)
             value = value .. " " .. sm.match
             sm.end_seq = potential_end_seq
             sm.i = sm.end_seq + 1
@@ -600,13 +630,12 @@ local function validate_datetime(sm: StateMachine, value: string): boolean
         end
     end
 
-    sm._, sm._, sm.match, year_s, month_s, day_s, hour, min, sec, sm.ext =
-        value:find("^((%d%d%d%d)%-(%d%d)%-(%d%d)[Tt ](%d%d):(%d%d):(%d%d))(.*)$")
-        as (integer, integer, string, string, string, string, string, string, string, string)
+    sm._, sm._, sm.match, year_s, month_s, day_s, hour, min, sm.ext =
+        value:find("^((%d%d%d%d)%-(%d%d)%-(%d%d)[Tt ](%d%d):(%d%d))(.*)$")
+        as (integer, integer, string, string, string, string, string, string, string)
     if sm.match then
         if _tointeger(hour) > 23 then _error(sm, "Hours must be less than 24. Found hour: " .. hour .. "in: " .. sm.match, "") end
         if _tointeger(min) > 59 then _error(sm, "Minutes must be less than 60. Found minute: " .. min .. "in: " .. sm.match) end
-        if _tointeger(sec) > 60 then _error(sm, "Seconds must be less than 61. Found second: " .. sec .. "in: " .. sm.match) end
         year, month, day = _tointeger(year_s), _tointeger(month_s), _tointeger(day_s)
         if month == 0 or month > 12 then _error(sm, "Month must be between 01-12. Found month: " .. month .. "in: " .. sm.match) end
         if day == 0 or day > max_days_in_month[month] then _error(sm, "Too many days in the month. Found " .. day .. " days in month " .. month .. ", which only has " .. max_days_in_month[month as integer] .. " days in: " .. sm.match, "local-datetime") end
@@ -617,11 +646,23 @@ local function validate_datetime(sm: StateMachine, value: string): boolean
             end
         end
 
+        -- see if seconds are next
+        local temp_ext: string
+        sm._, sm._, sec, temp_ext = sm.ext:find("^:(%d%d)(.*)$") as (integer, integer, string, string)
+        if sec then
+            if _tointeger(sec) > 60 then _error(sm, "Seconds must be less than 61. Found second: " .. sec .. "in: " .. sm.match) end
+            sm.match = sm.match .. ":" .. sec
+            sm.ext = temp_ext
+        else
+            sm.match = sm.match .. ":00"
+        end
+
+
         if sm.ext ~= "" then
             --TODO: maybe refactor at some point?
             if sm.ext:find("^%.%d+$") then
                 sm.value_type = "datetime-local"
-               sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
+                sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
                 return true
             elseif sm.ext:find("^%.%d+Z$") then
                 sm.value_type = "datetime"
@@ -884,13 +925,6 @@ local function assign_value(sm: StateMachine)
 
     sm.keys = {}
     sm.value = nil
-
-    -- i dont like having to check for this here, but it can be nil if there's no newline/whitespace at EOF
-    -- and we need to get that last value
-    sm.byte = sbyte(sm.input, sm.i)
-    if sm.byte == chars.COMMA then
-        sm.i = sm.i + 1
-    end
 end
 
 local function error_invalid_state(sm: StateMachine)
@@ -901,7 +935,6 @@ local function error_invalid_state(sm: StateMachine)
     elseif sm.mode == "inside_key" then error_message = error_message .. "In a key defintion, expected a '.' or '='. Found: " .. found
     elseif sm.mode == "value" then error_message = error_message .. "Unspecified value, key was specified, but no value provided."
     elseif sm.mode == "inside_array" then error_message = error_message .. "Inside an array, expected a ']', '}' (if inside inline table), ',', newline, or comment. Found: " .. found
-
     elseif sm.mode == "wait_for_newline" then error_message = error_message .. "Just assigned value or created table. Expected newline or comment."
     end
     _error(sm, error_message)
@@ -953,6 +986,10 @@ local function close_inline_table(sm: StateMachine): states
     end
 end
 
+local function skip_comma(sm: StateMachine)
+    sm.i = sm.i + 1
+end
+
 local transitions: {states:{integer:{function, states}}} = {
     ["start_of_line"] = {
         [sbyte("#")] = {find_newline, "start_of_line"},
@@ -962,6 +999,7 @@ local transitions: {states:{integer:{function, states}}} = {
         [sbyte("'")] = {close_literal_string, "inside_key"},
         [sbyte("[")] = {create_table, "table"},
         [sbyte("=")] = {error_invalid_state, "error"},
+        [sbyte("}")] = {close_inline_table, "?"},
         [0] = {close_bare_string, "inside_key"},
     },
     ["table"] = {
@@ -978,6 +1016,9 @@ local transitions: {states:{integer:{function, states}}} = {
         [sbyte('"')] = {close_string, "inside_key"},
         [sbyte("'")] = {close_literal_string, "inside_key"},
         [sbyte("}")] = {close_inline_table, "?"},
+        [sbyte("\r")] = {find_newline, "key"},
+        [sbyte("\n")] = {find_newline, "key"},
+        [sbyte("#")] = {find_newline, "key"},
         [0] = {close_bare_string, "inside_key"},
     },
     ["inside_key"] = {
@@ -1015,9 +1056,12 @@ local transitions: {states:{integer:{function, states}}} = {
         [0] = {error_invalid_state, "error"}
     },
     ["assign"] = {
-        [sbyte(",")] = {assign_value, "key"},
+        [sbyte(",")] = {assign_value, "wait_for_key"},
         [sbyte("}")] = {close_inline_table, "?"},
         [0] = {assign_value, "wait_for_newline"}
+    },
+    ["wait_for_key"] = {
+        [sbyte(",")] = {skip_comma, "key"},
     },
     ["wait_for_newline"] = {
         [sbyte("#")] = {find_newline, "start_of_line"},
@@ -1097,7 +1141,7 @@ function tinytoml.parse(filename: string, options?: TinyTomlOptions): {string:an
         if transition == nil then
             transition = transitions[sm.mode][0]
         end
-        --print(sm.mode, sm.i, string.char(sm.byte), transition[2])
+        -- print(sm.line_number, sm.mode, sm.i, string.char(sm.byte), transition[2])
         if transition[2] == "?" then
             dynamic_next_mode = transition[1](sm) as states
             sm.mode = dynamic_next_mode
@@ -1119,6 +1163,12 @@ function tinytoml.parse(filename: string, options?: TinyTomlOptions): {string:an
     end
     if sm.mode == "inside_array" or sm.mode == "array" then
         _error(sm, "Unable to find closing bracket of array", "array")
+    end
+    if sm.mode == "key" then
+        _error(sm, "Incorrect formatting for key", "key")
+    end
+    if sm.mode == "value" then
+        _error(sm, "The key never had a value assigned", "keyvalue-pair")
     end
     if sm.nested_inline_tables ~= 0 then
         _error(sm, "Unable to find closing bracket of inline table", "inline-table")

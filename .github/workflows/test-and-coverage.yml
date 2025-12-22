@@ -27,12 +27,12 @@ jobs:
 
       - name: Install Lua (${{ matrix.lua }})
         run: |
-          pip install hererocks
+          pip install git+https://github.com/luarocks/hererocks
           hererocks -r^ --${{ matrix.lua }} lua_install
           echo lua_install/bin >> $GITHUB_PATH
 
       - name: Install toml-test
-        run: go install github.com/toml-lang/toml-test/cmd/toml-test@v1.6.0
+        run: go install github.com/toml-lang/toml-test/v2/cmd/toml-test@latest
     
       - name: install depedencies
         run: |
@@ -43,7 +43,7 @@ jobs:
       - name: run toml-test with coverage
         continue-on-error: true
         run: |
-          toml-test -parallel 1 -- lua_install/bin/lua -lluacov spec/toml-test.lua
+          toml-test test -toml=1.1 -decoder="lua_install/bin/lua -lluacov spec/toml-test.lua"
           
       - name: Report test coverage
         if: success()
