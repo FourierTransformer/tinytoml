@@ -21,7 +21,7 @@ local tinytoml = {}
 
 
 local TOML_VERSION = "1.1.0"
-tinytoml._VERSION = "tinytoml 0.0.5"
+tinytoml._VERSION = "tinytoml 0.1.0"
 tinytoml._TOML_VERSION = TOML_VERSION
 tinytoml._DESCRIPTION = "a single-file pure Lua TOML parser"
 tinytoml._URL = "https://github.com/FourierTransformer/tinytoml"
