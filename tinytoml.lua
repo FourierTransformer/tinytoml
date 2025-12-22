@@ -986,7 +986,6 @@ local function close_inline_table(sm)
    end
 end
 
-
 local function skip_comma(sm)
    sm.i = sm.i + 1
 end

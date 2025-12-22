@@ -986,7 +986,6 @@ local function close_inline_table(sm: StateMachine): states
     end
 end
 
--- TODO: move this
 local function skip_comma(sm: StateMachine)
     sm.i = sm.i + 1
 end
