@@ -268,14 +268,6 @@ local function find_newline(sm: StateMachine)
     sm.i = sm.end_seq + 1
 end
 
-local function find_next_char(sm: StateMachine)
-    if sm.nested_inline_tables == 0 then
-        _error(sm, "Only inline tables allow newline and whitespace characters before key assignment")
-    end
-    sm._, sm.end_seq = sm.input:find("[^ \t]", sm.i)
-    sm.i = sm.end_seq + 1
-end
-
 local escape_sequences: {string:string} = {
     ['b'] = '\b',
     ['t'] = '\t',
@@ -1025,8 +1017,8 @@ local transitions: {states:{integer:{function, states}}} = {
         [sbyte('"')] = {close_string, "inside_key"},
         [sbyte("'")] = {close_literal_string, "inside_key"},
         [sbyte("}")] = {close_inline_table, "?"},
-        [sbyte("\r")] = {find_next_char, "key"},
-        [sbyte("\n")] = {find_next_char, "key"},
+        [sbyte("\r")] = {find_newline, "key"},
+        [sbyte("\n")] = {find_newline, "key"},
         [sbyte("#")] = {find_newline, "key"},
         [0] = {close_bare_string, "inside_key"},
     },
