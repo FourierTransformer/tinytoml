@@ -1173,6 +1173,12 @@ function tinytoml.parse(filename, options)
    if sm.mode == "inside_array" or sm.mode == "array" then
       _error(sm, "Unable to find closing bracket of array", "array")
    end
+   if sm.mode == "key" then
+      _error(sm, "Incorrect formatting for key", "key")
+   end
+   if sm.mode == "value" then
+      _error(sm, "The key never had a value assigned", "keyvalue-pair")
+   end
    if sm.nested_inline_tables ~= 0 then
       _error(sm, "Unable to find closing bracket of inline table", "inline-table")
    end
