@@ -67,6 +67,7 @@ local enum states
     "inline_table"
     "inside_inline_table"
     "error"
+    "wait_for_key"
     "wait_for_newline"
     "?" -- function decides next state
 end
@@ -268,20 +269,11 @@ local function find_newline(sm: StateMachine)
 end
 
 local function find_next_char(sm: StateMachine)
-    -- TODO: this only works if the table starts on the following line...
     if sm.nested_inline_tables == 0 then
         _error(sm, "Only inline tables allow newline and whitespace characters before key assignment")
     end
-    find_newline(sm)
-    sm._, sm.end_seq = sm.input:find("[^ \t]", sm.i-1) -- -1 here so we search _right after_ find_newline
+    sm._, sm.end_seq = sm.input:find("[^ \t]", sm.i)
     sm.i = sm.end_seq + 1
-
-    -- i dont like having to check for this here, but it can be nil if there's no newline/whitespace at EOF
-    -- and we need to get that last value
-    sm.byte = sbyte(sm.input, sm.i)
-    if sm.byte == chars.COMMA then
-        sm.i = sm.i + 1
-    end
 end
 
 local escape_sequences: {string:string} = {
@@ -631,8 +623,11 @@ local function validate_datetime(sm: StateMachine, value: string): boolean
         sm.value = sm.type_conversion[sm.value_type](sm.match)
 
         -- small hack that allows datetimes with spaces to work
-        -- does involve updating the current pointer if there is a match
+        -- does involve updating the current position in a validator...
         local potential_end_seq: integer
+
+        -- yes, this find is little quick and greedy, but even if we match and
+        -- it's not a real datetime, we'll generate an error message
         if sm.input:find("^ %d", sm.i) then
             sm._, potential_end_seq, sm.match = sm.input:find("^ ([%S]+)", sm.i)
             value = value .. " " .. sm.match
@@ -938,13 +933,6 @@ local function assign_value(sm: StateMachine)
 
     sm.keys = {}
     sm.value = nil
-
-    -- i dont like having to check for this here, but it can be nil if there's no newline/whitespace at EOF
-    -- and we need to get that last value
-    sm.byte = sbyte(sm.input, sm.i)
-    if sm.byte == chars.COMMA then
-        sm.i = sm.i + 1
-    end
 end
 
 local function error_invalid_state(sm: StateMachine)
@@ -955,7 +943,6 @@ local function error_invalid_state(sm: StateMachine)
     elseif sm.mode == "inside_key" then error_message = error_message .. "In a key defintion, expected a '.' or '='. Found: " .. found
     elseif sm.mode == "value" then error_message = error_message .. "Unspecified value, key was specified, but no value provided."
     elseif sm.mode == "inside_array" then error_message = error_message .. "Inside an array, expected a ']', '}' (if inside inline table), ',', newline, or comment. Found: " .. found
-
     elseif sm.mode == "wait_for_newline" then error_message = error_message .. "Just assigned value or created table. Expected newline or comment."
     end
     _error(sm, error_message)
@@ -1005,6 +992,11 @@ local function close_inline_table(sm: StateMachine): states
     else
         _error(sm, "close_inline_table should not be called from the previous state: " .. restore.previous_state as string .. ". Please submit an issue with your TOML file so we can look into the issue!")
     end
+end
+
+-- TODO: move this
+local function skip_comma(sm: StateMachine)
+    sm.i = sm.i + 1
 end
 
 local transitions: {states:{integer:{function, states}}} = {
@@ -1073,9 +1065,12 @@ local transitions: {states:{integer:{function, states}}} = {
         [0] = {error_invalid_state, "error"}
     },
     ["assign"] = {
-        [sbyte(",")] = {assign_value, "key"},
+        [sbyte(",")] = {assign_value, "wait_for_key"},
         [sbyte("}")] = {close_inline_table, "?"},
         [0] = {assign_value, "wait_for_newline"}
+    },
+    ["wait_for_key"] = {
+        [sbyte(",")] = {skip_comma, "key"},
     },
     ["wait_for_newline"] = {
         [sbyte("#")] = {find_newline, "start_of_line"},
