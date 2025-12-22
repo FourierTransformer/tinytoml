@@ -43,7 +43,7 @@ jobs:
       - name: run toml-test with coverage
         continue-on-error: true
         run: |
-          toml-test test -toml=1.1 -decoder="lua_install/bin/lua -lluacov spec/toml-test.lua"
+          toml-test test -parallel 1 -toml=1.1 -decoder="lua_install/bin/lua -lluacov spec/toml-test.lua"
           
       - name: Report test coverage
         if: success()
