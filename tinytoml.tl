@@ -1177,5 +1177,131 @@ function tinytoml.parse(filename: string, options?: TinyTomlOptions): {string:an
     return sm.output
 end
 
+local function is_array(input_table: any): boolean
+    local count = #(input_table as {any})
+    return count > 0 and next(input_table as {any}, count) == nil
+end
+
+local function escape_string(str: string): string
+    if str:find("\n") then
+        return "'''" .. (str as string) .. "'''"
+    else
+        return "'" .. (str as string) .. "'"
+    end
+end
+
+local function escape_key(str: string): string
+    if str:find("^[A-Za-z0-9_-]+$") then
+        return str
+    else
+        -- but no multiline!
+        return escape_string(str)
+    end
+end
+
+local function encode_element(element: any): string
+    if type(element) == "table" then
+        local encoded_string = {}
+        if is_array(element) then
+            table.insert(encoded_string, "[")
+
+            for _, array_element in ipairs(element as {any}) do
+                table.insert(encoded_string, encode_element(array_element))
+                table.insert(encoded_string, ",")
+            end
+            -- empty arrays get weirdly deleted...
+            -- table.remove(encoded_string)
+            table.insert(encoded_string, "]\n")
+
+            return table.concat(encoded_string)
+
+        else
+            table.insert(encoded_string, "{")
+
+            for k, v in pairs(element as {string: any}) do
+                table.insert(encoded_string, k)
+                table.insert(encoded_string, " = ")
+                table.insert(encoded_string, encode_element(v))
+                table.insert(encoded_string, ",")
+            end
+            -- table.remove(encoded_string)
+            table.insert(encoded_string, "}")
+
+            return table.concat(encoded_string)
+
+        end
+
+    elseif type(element) == "string" then
+        return escape_string(element as string)
+    else
+        return tostring(element)
+    end
+end
+
+local function encoder(input_table: any, encoded_string: {string}, depth: {string}): {string}
+    local printed_table_info = false
+    for k, v in pairs(input_table as {string: any}) do
+        if type(v) ~= "table" then
+            if not printed_table_info and #depth > 0 then
+                table.insert(encoded_string, '[')
+                table.insert(encoded_string, table.concat(depth, '.'))
+                table.insert(encoded_string, ']\n')
+                printed_table_info = true
+            end
+            table.insert(encoded_string, escape_key(k))
+            table.insert(encoded_string, " = ")
+            if type(v) == "string" then
+                table.insert(encoded_string, escape_string(v as string))
+            else
+                table.insert(encoded_string, tostring(v))
+            end
+            table.insert(encoded_string, "\n")
+        end
+    end
+    for k, v in pairs(input_table as {string: any}) do
+        if type(v) == "table" then
+            
+            if is_array(v) then
+                if not printed_table_info and #depth > 0 then
+                    table.insert(encoded_string, '[')
+                    table.insert(encoded_string, table.concat(depth, '.'))
+                    table.insert(encoded_string, ']\n')
+                    printed_table_info = true                    
+                end
+
+
+                table.insert(encoded_string, escape_key(k))
+                table.insert(encoded_string, " = [")
+                for _, element in ipairs(v as {any}) do
+                    table.insert(encoded_string, encode_element(element))
+                    table.insert(encoded_string, ", ")
+                end
+                -- table.remove(encoded_string)
+                table.insert(encoded_string, "]\n")
+               
+            elseif next(v as {any:any}) == nil then
+
+                if not printed_table_info then
+                    table.insert(depth, escape_key(k))
+                    table.insert(encoded_string, '[')
+                    table.insert(encoded_string, table.concat(depth, '.'))
+                    table.insert(encoded_string, ']\n')
+                    table.remove(depth)
+                end
+
+            else
+                table.insert(depth, escape_key(k))
+                encoder(v, encoded_string, depth)
+                table.remove(depth)
+            end
+        end
+    end
+    return encoded_string
+end
+
+function tinytoml.encode(input_table: any): string
+    return table.concat(encoder(input_table, {}, {}))
+end
+
 return tinytoml
 
