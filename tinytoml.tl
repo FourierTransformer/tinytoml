@@ -1182,21 +1182,96 @@ local function is_array(input_table: any): boolean
     return count > 0 and next(input_table as {any}, count) == nil
 end
 
-local function escape_string(str: string): string
-    if str:find("\n") then
-        return "'''" .. (str as string) .. "'''"
-    else
-        return "'" .. (str as string) .. "'"
+local short_sequences: {integer:string} = {
+    [sbyte('\b')] = '\\b',
+    [sbyte('\t')] = '\\t',
+    [sbyte('\n')] = '\\n',
+    [sbyte('\f')] = '\\f',
+    [sbyte('\r')] = '\\r',
+    [sbyte('\t')] = '\\t',
+    [sbyte('\\')] = '\\\\',
+    [sbyte('"')] = '\\"',
+}
+
+local function escape_string(str: string, is_key: boolean): string
+
+    -- possibly a date or a time!
+    if not is_key and str:find("%d%d") then
+        -- since Lua doesn't have any datetime format, it's about to get wild.
+
+        -- setting up a _very_ basic StateMachine
+        local sm: StateMachine = {}
+        sm.type_conversion = {
+            ["datetime"] = generic_type_conversion,
+            ["datetime-local"] = generic_type_conversion,
+            ["date-local"] = generic_type_conversion,
+            ["time-local"] = generic_type_conversion
+        }
+        sm.input = str
+        sm.i = 1
+
+        -- performing the same setup as in close_other_value, should set values correctly to run validate_datetime
+        sm._, sm.end_seq, sm.match = sm.input:find("^([^ #\r\n,%[{%]}]+)", sm.i)
+        sm.i = sm.end_seq + 1
+
+        -- TODO: wrap in pcall, if it's not a valid datetime, then treat it as a str.
+        if validate_datetime(sm, str) then
+            if sm.value_type == "datetime" or sm.value_type == "datetime-local" or
+                sm.value_type == "date-local" or sm.value_type == "time-local" then
+                return sm.value as string
+            end
+        end
     end
+
+    local escaped_str = {'"'}
+
+    local byte: integer
+    for i = 1, #str do
+        byte = sbyte(str, i)
+        if short_sequences[byte] then
+            table.insert(escaped_str, short_sequences[byte])
+        elseif byte < 32 or byte == 127 then
+            table.insert(escaped_str, "\\x" .. string.format("%02x", byte))
+        else
+            table.insert(escaped_str, str:sub(i, i))
+        end
+    end
+    table.insert(escaped_str, '"')
+
+    return table.concat(escaped_str)
+
 end
 
 local function escape_key(str: string): string
     if str:find("^[A-Za-z0-9_-]+$") then
         return str
     else
-        -- but no multiline!
-        return escape_string(str)
+        return escape_string(str, true)
     end
+end
+
+local to_inf_and_beyound = {
+   ["inf"] = true,
+   ["-inf"] = true,
+   ["nan"] = true,
+   ["-nan"] = true
+}
+
+-- Using a slightly modified version from https://stackoverflow.com/a/69827191
+local function float_to_string(x: number): string
+   -- a table key can't be nan in Lua, and I would've rather checked for equality with
+   -- math.huge/nan (as 0/0), but (0/0) != (0/0) in Lua so I think this is probably fine.
+   if to_inf_and_beyound[tostring(x)] then
+      return tostring(x)
+   end
+   for precision = 15, 17 do
+      -- Use a 2-layer format to try different precisions with %g.
+      local s <const> = ('%%.%dg'):format(precision):format(x)
+      -- See if s is an exact representation of x.
+      if tonumber(s) == x then
+         return s
+      end
+   end
 end
 
 local function encode_element(element: any): string
@@ -1233,9 +1308,19 @@ local function encode_element(element: any): string
 
     elseif type(element) == "string" then
         return escape_string(element as string)
+    
+    elseif type(element) == "number" then
+        return float_to_string(element as number)
+    
     else
         return tostring(element)
     end
+end
+
+local function encode_depth(encoded_string: {string}, depth: {string})
+    table.insert(encoded_string, '[')
+    table.insert(encoded_string, table.concat(depth, '.'))
+    table.insert(encoded_string, ']\n')
 end
 
 local function encoder(input_table: any, encoded_string: {string}, depth: {string}): {string}
@@ -1243,18 +1328,12 @@ local function encoder(input_table: any, encoded_string: {string}, depth: {strin
     for k, v in pairs(input_table as {string: any}) do
         if type(v) ~= "table" then
             if not printed_table_info and #depth > 0 then
-                table.insert(encoded_string, '[')
-                table.insert(encoded_string, table.concat(depth, '.'))
-                table.insert(encoded_string, ']\n')
+                encode_depth(encoded_string, depth)
                 printed_table_info = true
             end
             table.insert(encoded_string, escape_key(k))
             table.insert(encoded_string, " = ")
-            if type(v) == "string" then
-                table.insert(encoded_string, escape_string(v as string))
-            else
-                table.insert(encoded_string, tostring(v))
-            end
+            table.insert(encoded_string, encode_element(v))
             table.insert(encoded_string, "\n")
         end
     end
@@ -1263,9 +1342,7 @@ local function encoder(input_table: any, encoded_string: {string}, depth: {strin
             
             if is_array(v) then
                 if not printed_table_info and #depth > 0 then
-                    table.insert(encoded_string, '[')
-                    table.insert(encoded_string, table.concat(depth, '.'))
-                    table.insert(encoded_string, ']\n')
+                    encode_depth(encoded_string, depth)
                     printed_table_info = true                    
                 end
 
@@ -1280,14 +1357,9 @@ local function encoder(input_table: any, encoded_string: {string}, depth: {strin
                 table.insert(encoded_string, "]\n")
                
             elseif next(v as {any:any}) == nil then
-
-                if not printed_table_info then
-                    table.insert(depth, escape_key(k))
-                    table.insert(encoded_string, '[')
-                    table.insert(encoded_string, table.concat(depth, '.'))
-                    table.insert(encoded_string, ']\n')
-                    table.remove(depth)
-                end
+                table.insert(depth, escape_key(k))
+                encode_depth(encoded_string, depth)
+                table.remove(depth)
 
             else
                 table.insert(depth, escape_key(k))
