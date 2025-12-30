@@ -1233,6 +1233,8 @@ local function escape_string(str: string, is_key: boolean): string
         elseif byte < 32 or byte == 127 then
             table.insert(escaped_str, "\\x" .. string.format("%02x", byte))
         else
+            -- string creation is slow, so this is not super efficient...
+            -- maybe swap with a str:find(".") or something.
             table.insert(escaped_str, str:sub(i, i))
         end
     end
@@ -1272,6 +1274,8 @@ local function float_to_string(x: number): string
          return s
       end
    end
+   -- fallback in case we can't get the precision.
+   return tostring(x)
 end
 
 local function encode_element(element: any): string
@@ -1307,7 +1311,7 @@ local function encode_element(element: any): string
         end
 
     elseif type(element) == "string" then
-        return escape_string(element as string)
+        return escape_string(element as string, false)
     
     elseif type(element) == "number" then
         return float_to_string(element as number)
@@ -1326,7 +1330,7 @@ end
 local function encoder(input_table: any, encoded_string: {string}, depth: {string}): {string}
     local printed_table_info = false
     for k, v in pairs(input_table as {string: any}) do
-        if type(v) ~= "table" then
+        if type(v) ~= "table" or (type(v) == "table" and is_array(v)) then
             if not printed_table_info and #depth > 0 then
                 encode_depth(encoded_string, depth)
                 printed_table_info = true
@@ -1338,29 +1342,13 @@ local function encoder(input_table: any, encoded_string: {string}, depth: {strin
         end
     end
     for k, v in pairs(input_table as {string: any}) do
-        if type(v) == "table" then
-            
-            if is_array(v) then
-                if not printed_table_info and #depth > 0 then
-                    encode_depth(encoded_string, depth)
-                    printed_table_info = true                    
-                end
-
-
-                table.insert(encoded_string, escape_key(k))
-                table.insert(encoded_string, " = [")
-                for _, element in ipairs(v as {any}) do
-                    table.insert(encoded_string, encode_element(element))
-                    table.insert(encoded_string, ", ")
-                end
-                -- table.remove(encoded_string)
-                table.insert(encoded_string, "]\n")
-               
-            elseif next(v as {any:any}) == nil then
+        if type(v) == "table" and not is_array(v) then
+            if next(v as {any:any}) == nil then
                 table.insert(depth, escape_key(k))
                 encode_depth(encoded_string, depth)
                 table.remove(depth)
 
+            -- descend
             else
                 table.insert(depth, escape_key(k))
                 encoder(v, encoded_string, depth)
