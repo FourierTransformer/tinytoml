@@ -1198,7 +1198,7 @@ local function escape_string(str: string, is_key: boolean): string
     -- possibly a date or a time!
     if not is_key and str:find("%d%d") then
         -- since Lua doesn't have any datetime format, it's about to get wild.
-
+        -- Going to check if the string is a valid datetime and return accordingly
         -- setting up a _very_ basic StateMachine
         local sm: StateMachine = {}
         sm.type_conversion = {
@@ -1215,7 +1215,7 @@ local function escape_string(str: string, is_key: boolean): string
         sm.i = sm.end_seq + 1
 
         -- TODO: wrap in pcall, if it's not a valid datetime, then treat it as a str.
-        if validate_datetime(sm, str) then
+        if validate_datetime(sm, sm.match) then
             if sm.value_type == "datetime" or sm.value_type == "datetime-local" or
                 sm.value_type == "date-local" or sm.value_type == "time-local" then
                 return sm.value as string
@@ -1226,17 +1226,27 @@ local function escape_string(str: string, is_key: boolean): string
     local escaped_str = {'"'}
 
     local byte: integer
-    for i = 1, #str do
+    local i = 1
+    local _: integer
+    local end_seq: integer
+    local match: string
+    while i <= #str do
         byte = sbyte(str, i)
         if short_sequences[byte] then
             table.insert(escaped_str, short_sequences[byte])
         elseif byte < 32 or byte == 127 then
             table.insert(escaped_str, "\\x" .. string.format("%02x", byte))
         else
-            -- string creation is slow, so this is not super efficient...
-            -- maybe swap with a str:find(".") or something.
-            table.insert(escaped_str, str:sub(i, i))
+            -- should hopefully result in fewer string creations!
+            _, end_seq, match = str:find("^([a-zA-Z0-9-_]+)", i)
+            if end_seq then
+                i = end_seq
+                table.insert(escaped_str, match)
+            else
+                table.insert(escaped_str, str:sub(i,i))
+            end
         end
+        i = i + 1
     end
     table.insert(escaped_str, '"')
 
@@ -1252,7 +1262,7 @@ local function escape_key(str: string): string
     end
 end
 
-local to_inf_and_beyound = {
+local to_inf_and_beyound: {string: boolean} = {
    ["inf"] = true,
    ["-inf"] = true,
    ["nan"] = true,

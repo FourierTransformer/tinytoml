@@ -1177,4 +1177,200 @@ function tinytoml.parse(filename, options)
    return sm.output
 end
 
+local function is_array(input_table)
+   local count = #(input_table)
+   return count > 0 and next(input_table, count) == nil
+end
+
+local short_sequences = {
+   [sbyte('\b')] = '\\b',
+   [sbyte('\t')] = '\\t',
+   [sbyte('\n')] = '\\n',
+   [sbyte('\f')] = '\\f',
+   [sbyte('\r')] = '\\r',
+   [sbyte('\t')] = '\\t',
+   [sbyte('\\')] = '\\\\',
+   [sbyte('"')] = '\\"',
+}
+
+local function escape_string(str, is_key)
+
+
+   if not is_key and str:find("%d%d") then
+
+
+
+      local sm = {}
+      sm.type_conversion = {
+         ["datetime"] = generic_type_conversion,
+         ["datetime-local"] = generic_type_conversion,
+         ["date-local"] = generic_type_conversion,
+         ["time-local"] = generic_type_conversion,
+      }
+      sm.input = str
+      sm.i = 1
+
+
+      sm._, sm.end_seq, sm.match = sm.input:find("^([^ #\r\n,%[{%]}]+)", sm.i)
+      sm.i = sm.end_seq + 1
+
+
+      if validate_datetime(sm, sm.match) then
+         if sm.value_type == "datetime" or sm.value_type == "datetime-local" or
+            sm.value_type == "date-local" or sm.value_type == "time-local" then
+            return sm.value
+         end
+      end
+   end
+
+   local escaped_str = { '"' }
+
+   local byte
+   local i = 1
+   local _
+   local end_seq
+   local match
+   while i <= #str do
+      byte = sbyte(str, i)
+      if short_sequences[byte] then
+         table.insert(escaped_str, short_sequences[byte])
+      elseif byte < 32 or byte == 127 then
+         table.insert(escaped_str, "\\x" .. string.format("%02x", byte))
+      else
+
+         _, end_seq, match = str:find("^([a-zA-Z0-9-_]+)", i)
+         if end_seq then
+            i = end_seq
+            table.insert(escaped_str, match)
+         else
+            table.insert(escaped_str, str:sub(i, i))
+         end
+      end
+      i = i + 1
+   end
+   table.insert(escaped_str, '"')
+
+   return table.concat(escaped_str)
+
+end
+
+local function escape_key(str)
+   if str:find("^[A-Za-z0-9_-]+$") then
+      return str
+   else
+      return escape_string(str, true)
+   end
+end
+
+local to_inf_and_beyound = {
+   ["inf"] = true,
+   ["-inf"] = true,
+   ["nan"] = true,
+   ["-nan"] = true,
+}
+
+
+local function float_to_string(x)
+
+
+   if to_inf_and_beyound[tostring(x)] then
+      return tostring(x)
+   end
+   for precision = 15, 17 do
+
+      local s = ('%%.%dg'):format(precision):format(x)
+
+      if tonumber(s) == x then
+         return s
+      end
+   end
+
+   return tostring(x)
+end
+
+local function encode_element(element)
+   if type(element) == "table" then
+      local encoded_string = {}
+      if is_array(element) then
+         table.insert(encoded_string, "[")
+
+         for _, array_element in ipairs(element) do
+            table.insert(encoded_string, encode_element(array_element))
+            table.insert(encoded_string, ",")
+         end
+
+
+         table.insert(encoded_string, "]\n")
+
+         return table.concat(encoded_string)
+
+      else
+         table.insert(encoded_string, "{")
+
+         for k, v in pairs(element) do
+            table.insert(encoded_string, k)
+            table.insert(encoded_string, " = ")
+            table.insert(encoded_string, encode_element(v))
+            table.insert(encoded_string, ",")
+         end
+
+         table.insert(encoded_string, "}")
+
+         return table.concat(encoded_string)
+
+      end
+
+   elseif type(element) == "string" then
+      return escape_string(element, false)
+
+   elseif type(element) == "number" then
+      return float_to_string(element)
+
+   else
+      return tostring(element)
+   end
+end
+
+local function encode_depth(encoded_string, depth)
+   table.insert(encoded_string, '[')
+   table.insert(encoded_string, table.concat(depth, '.'))
+   table.insert(encoded_string, ']\n')
+end
+
+local function encoder(input_table, encoded_string, depth)
+   local printed_table_info = false
+   for k, v in pairs(input_table) do
+      if type(v) ~= "table" or (type(v) == "table" and is_array(v)) then
+         if not printed_table_info and #depth > 0 then
+            encode_depth(encoded_string, depth)
+            printed_table_info = true
+         end
+         table.insert(encoded_string, escape_key(k))
+         table.insert(encoded_string, " = ")
+         table.insert(encoded_string, encode_element(v))
+         table.insert(encoded_string, "\n")
+      end
+   end
+   for k, v in pairs(input_table) do
+      if type(v) == "table" and not is_array(v) then
+         if next(v) == nil then
+            table.insert(depth, escape_key(k))
+            encode_depth(encoded_string, depth)
+            table.remove(depth)
+
+
+         else
+            table.insert(depth, escape_key(k))
+            encoder(v, encoded_string, depth)
+            table.remove(depth)
+         end
+      end
+   end
+   return encoded_string
+end
+
+function tinytoml.encode(input_table)
+   return table.concat(encoder(input_table, {}, {}))
+end
+
 return tinytoml
