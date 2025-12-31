@@ -10,15 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        lua: [lua=5.1, lua=5.2, lua=5.3, lua=5.4, luajit=@v2.0, luajit=@v2.1]
-    steps:
-      - name: Fail on Draft PRs
-        if: github.event.pull_request.draft == true
-        run: exit 1
-    
+        lua: [lua=5.1, lua=5.2, lua=5.3, lua=5.4, lua=5.5, luajit=@v2.0, luajit=@v2.1]
+    steps:    
       # Checks-out the repository under $GITHUB_WORKSPACE.
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
         with:
           go-version: '>=1.19'
 
@@ -43,7 +39,7 @@ jobs:
       - name: run toml-test with coverage
         continue-on-error: true
         run: |
-          toml-test test -parallel 1 -toml=1.1 -decoder="lua_install/bin/lua -lluacov spec/toml-test.lua"
+          toml-test test -parallel 1 -toml=1.1 -decoder="lua_install/bin/lua -lluacov spec/decoder.lua" -encoder="lua_install/bin/lua -lluacov spec/encoder.lua"
           
       - name: Report test coverage
         if: success()

@@ -1,3 +1,5 @@
+#!/usr/bin/env lua
+
 local cjson = require("cjson")
 local tinytoml = require("tinytoml")
 
@@ -9,7 +11,7 @@ local to_inf_and_beyound = {
 }
 
 -- Using a slightly modified version from https://stackoverflow.com/a/69827191
-local function float_to_string(x)
+local function float_to_string(x: number): string
    -- a table key can't be nan in Lua, and I would've rather checked for equality with
    -- math.huge/nan (as 0/0), but (0/0) != (0/0) in Lua so I think this is probably fine.
    if to_inf_and_beyound[tostring(x)] then
@@ -28,7 +30,7 @@ end
 -- the format toml-test expects
 local assign_value_function = function(value: any, value_type?: string): any 
    if value_type == "float" then
-      return {["value"]=float_to_string(value), ["type"]=value_type}
+      return {["value"]=float_to_string(value as number), ["type"]=value_type}
    else
       return {["value"]=tostring(value), ["type"]=value_type} 
    end
