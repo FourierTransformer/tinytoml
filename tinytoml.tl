@@ -1177,6 +1177,12 @@ function tinytoml.parse(filename: string, options?: TinyTomlOptions): {string:an
     return sm.output
 end
 
+-- Encoder code is below!
+
+local record EncoderOptions
+    allow_multiline_strings: boolean
+end
+
 local function is_array(input_table: any): boolean
     local count = #(input_table as {any})
     return count > 0 and next(input_table as {any}, count) == nil
@@ -1193,12 +1199,13 @@ local short_sequences: {integer:string} = {
     [sbyte('"')] = '\\"',
 }
 
-local function escape_string(str: string, is_key: boolean): string
+local function escape_string(str: string, multiline: boolean, is_key: boolean): string
 
     -- possibly a date or a time!
     if not is_key and str:find("%d%d") then
-        -- since Lua doesn't have any datetime format, it's about to get wild.
-        -- Going to check if the string is a valid datetime and return accordingly
+        -- since Lua doesn't have any datetime format, going to check if the string is 
+        -- a valid datetime and return accordingly
+        
         -- setting up a _very_ basic StateMachine
         local sm: StateMachine = {}
         sm.type_conversion = {
@@ -1215,7 +1222,7 @@ local function escape_string(str: string, is_key: boolean): string
         sm._, sm.end_seq, sm.match = sm.input:find("^([^ #\r\n,%[{%]}]+)", sm.i)
         sm.i = sm.end_seq + 1
 
-        -- TODO: wrap in pcall, if it's not a valid datetime, then treat it as a str.
+        -- TODO: wrap in pcall
         if validate_datetime(sm, sm.match) then
             if sm.value_type == "datetime" or sm.value_type == "datetime-local" or
                 sm.value_type == "date-local" or sm.value_type == "time-local" then
@@ -1231,9 +1238,15 @@ local function escape_string(str: string, is_key: boolean): string
     local _: integer
     local end_seq: integer
     local match: string
+    local found_multiline = false
     while i <= #str do
         byte = sbyte(str, i)
-        if short_sequences[byte] then
+        if multiline and str:find("^\r?\n", i) then
+            _, end_seq, match = str:find("^(\r?\n)", i)
+            found_multiline = true
+            i = end_seq
+            table.insert(escaped_str, match)
+        elseif short_sequences[byte] then
             table.insert(escaped_str, short_sequences[byte])
         elseif byte < 32 or byte == 127 then
             table.insert(escaped_str, "\\x" .. string.format("%02x", byte))
@@ -1249,7 +1262,10 @@ local function escape_string(str: string, is_key: boolean): string
         end
         i = i + 1
     end
-    table.insert(escaped_str, '"')
+    if found_multiline then
+        escaped_str[1] = '"""'
+    end
+    table.insert(escaped_str, escaped_str[1])
 
     local final_string = table.concat(escaped_str)
     if not validate_utf8(final_string, true) then
@@ -1263,7 +1279,7 @@ local function escape_key(str: string): string
     if str:find("^[A-Za-z0-9_-]+$") then
         return str
     else
-        return escape_string(str, true)
+        return escape_string(str, false, true)
     end
 end
 
@@ -1293,7 +1309,7 @@ local function float_to_string(x: number): string
    return tostring(x)
 end
 
-local function encode_element(element: any): string
+local function encode_element(element: any, allow_multiline_strings: boolean): string
     if type(element) == "table" then
         local encoded_string = {}
         if is_array(element) then
@@ -1302,7 +1318,7 @@ local function encode_element(element: any): string
             local remove_trailing_comma = false
             for _, array_element in ipairs(element as {any}) do
                 remove_trailing_comma = true
-                table.insert(encoded_string, encode_element(array_element))
+                table.insert(encoded_string, encode_element(array_element, allow_multiline_strings))
                 table.insert(encoded_string, ", ")
             end
             if remove_trailing_comma then table.remove(encoded_string) end
@@ -1319,7 +1335,7 @@ local function encode_element(element: any): string
                 remove_trailing_comma = true
                 table.insert(encoded_string, k)
                 table.insert(encoded_string, " = ")
-                table.insert(encoded_string, encode_element(v))
+                table.insert(encoded_string, encode_element(v, allow_multiline_strings))
                 table.insert(encoded_string, ", ")
             end
             if remove_trailing_comma then table.remove(encoded_string) end
@@ -1331,13 +1347,16 @@ local function encode_element(element: any): string
         end
 
     elseif type(element) == "string" then
-        return escape_string(element as string, false)
+        return escape_string(element as string, allow_multiline_strings, false)
     
     elseif type(element) == "number" then
         return float_to_string(element as number)
     
-    else
+    elseif type(element) == "boolean" then
         return tostring(element)
+
+    else
+        error("Unable to encode type '" .. type(element) .. "' into a TOML")
     end
 end
 
@@ -1347,7 +1366,7 @@ local function encode_depth(encoded_string: {string}, depth: {string})
     table.insert(encoded_string, ']\n')
 end
 
-local function encoder(input_table: any, encoded_string: {string}, depth: {string}): {string}
+local function encoder(input_table: any, encoded_string: {string}, depth: {string}, options: EncoderOptions): {string}
     local printed_table_info = false
     for k, v in pairs(input_table as {string: any}) do
         if type(v) ~= "table" or (type(v) == "table" and is_array(v)) then
@@ -1357,7 +1376,7 @@ local function encoder(input_table: any, encoded_string: {string}, depth: {strin
             end
             table.insert(encoded_string, escape_key(k))
             table.insert(encoded_string, " = ")
-            table.insert(encoded_string, encode_element(v))
+            table.insert(encoded_string, encode_element(v, options.allow_multiline_strings))
             table.insert(encoded_string, "\n")
         end
     end
@@ -1371,7 +1390,7 @@ local function encoder(input_table: any, encoded_string: {string}, depth: {strin
             -- descend
             else
                 table.insert(depth, escape_key(k))
-                encoder(v, encoded_string, depth)
+                encoder(v, encoded_string, depth, options)
                 table.remove(depth)
             end
         end
@@ -1379,8 +1398,11 @@ local function encoder(input_table: any, encoded_string: {string}, depth: {strin
     return encoded_string
 end
 
-function tinytoml.encode(input_table: any): string
-    return table.concat(encoder(input_table, {}, {}))
+function tinytoml.encode(input_table: any, options?: EncoderOptions): string
+    options = options or {
+        allow_multiline_strings = false
+    }
+    return table.concat(encoder(input_table, {}, {}, options))
 end
 
 return tinytoml
