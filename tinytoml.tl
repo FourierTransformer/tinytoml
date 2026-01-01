@@ -1250,7 +1250,9 @@ local function escape_string(str: string, is_key: boolean): string
     end
     table.insert(escaped_str, '"')
 
-    return table.concat(escaped_str)
+    local final_string = table.concat(escaped_str)
+    validate_utf8(final_string, true)
+    return final_string
 
 end
 
@@ -1294,26 +1296,31 @@ local function encode_element(element: any): string
         if is_array(element) then
             table.insert(encoded_string, "[")
 
+            local remove_trailing_comma = false
             for _, array_element in ipairs(element as {any}) do
+                remove_trailing_comma = true
                 table.insert(encoded_string, encode_element(array_element))
-                table.insert(encoded_string, ",")
+                table.insert(encoded_string, ", ")
             end
-            -- empty arrays get weirdly deleted...
-            -- table.remove(encoded_string)
-            table.insert(encoded_string, "]\n")
+            if remove_trailing_comma then table.remove(encoded_string) end
+
+            table.insert(encoded_string, "]")
 
             return table.concat(encoded_string)
 
         else
             table.insert(encoded_string, "{")
 
+            local remove_trailing_comma = false
             for k, v in pairs(element as {string: any}) do
+                remove_trailing_comma = true
                 table.insert(encoded_string, k)
                 table.insert(encoded_string, " = ")
                 table.insert(encoded_string, encode_element(v))
-                table.insert(encoded_string, ",")
+                table.insert(encoded_string, ", ")
             end
-            -- table.remove(encoded_string)
+            if remove_trailing_comma then table.remove(encoded_string) end
+            
             table.insert(encoded_string, "}")
 
             return table.concat(encoded_string)
@@ -1332,7 +1339,7 @@ local function encode_element(element: any): string
 end
 
 local function encode_depth(encoded_string: {string}, depth: {string})
-    table.insert(encoded_string, '[')
+    table.insert(encoded_string, '\n[')
     table.insert(encoded_string, table.concat(depth, '.'))
     table.insert(encoded_string, ']\n')
 end
