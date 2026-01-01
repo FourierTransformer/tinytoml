@@ -91,5 +91,25 @@ Takes in a Lua table and encodes it as a TOML string.
 
 ### Options
 
+### On encoding dates and times
+Since Lua doesn't have a builtin date or time type, we can't just do a `type` on an object to get its type and write it out correctly. To remedy this, we check if a Lua string _looks_ and validates as a date or time and then write it out as one of the TOML datetime types ([offset date-time](https://toml.io/en/v1.1.0#offset-date-time), [local date-time](https://toml.io/en/v1.1.0#local-date-time), [local date](https://toml.io/en/v1.1.0#local-date), or [local time](https://toml.io/en/v1.1.0#local-time)).
 
+Example:
+```lua
+{
+  offset_datetime = "1979-05-27T07:32:00Z",
+  local_datetime = "1979-05-27T07:32:00",
+  local_date = "1979-05-27",
+  local_time = "07:32:00",
+}
+```
 
+Would then encode to
+```toml
+offset_datetime = 1979-05-27T07:32:00Z
+local_datetime = 1979-05-27T07:32:00
+local_time = 07:32:00
+local_date = 1979-05-27
+```
+
+This effectively means you'll have to pre-process dates and times to strings in your codebase, before passing them to tinytoml's encoder.

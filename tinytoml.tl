@@ -1209,6 +1209,7 @@ local function escape_string(str: string, is_key: boolean): string
         }
         sm.input = str
         sm.i = 1
+        sm.filename = "encode process"
 
         -- performing the same setup as in close_other_value, should set values correctly to run validate_datetime
         sm._, sm.end_seq, sm.match = sm.input:find("^([^ #\r\n,%[{%]}]+)", sm.i)
@@ -1251,7 +1252,9 @@ local function escape_string(str: string, is_key: boolean): string
     table.insert(escaped_str, '"')
 
     local final_string = table.concat(escaped_str)
-    validate_utf8(final_string, true)
+    if not validate_utf8(final_string, true) then
+        error("String is not valid UTF-8, cannot encode to TOML")
+    end
     return final_string
 
 end
