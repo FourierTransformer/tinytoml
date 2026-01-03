@@ -1177,5 +1177,233 @@ function tinytoml.parse(filename: string, options?: TinyTomlOptions): {string:an
     return sm.output
 end
 
+-- Encoder code is below!
+
+local record EncoderOptions
+    allow_multiline_strings: boolean
+end
+
+local function is_array(input_table: any): boolean
+    local count = #(input_table as {any})
+    return count > 0 and next(input_table as {any}, count) == nil
+end
+
+local short_sequences: {integer:string} = {
+    [sbyte('\b')] = '\\b',
+    [sbyte('\t')] = '\\t',
+    [sbyte('\n')] = '\\n',
+    [sbyte('\f')] = '\\f',
+    [sbyte('\r')] = '\\r',
+    [sbyte('\t')] = '\\t',
+    [sbyte('\\')] = '\\\\',
+    [sbyte('"')] = '\\"',
+}
+
+local function escape_string(str: string, multiline: boolean, is_key: boolean): string
+
+    -- possibly a date or a time!
+    if not is_key and str:find("%d%d") then
+        -- since Lua doesn't have any datetime format, going to check if the string is 
+        -- a valid datetime and return accordingly
+        
+        -- setting up a _very_ basic StateMachine
+        local sm: StateMachine = {}
+        sm.type_conversion = {
+            ["datetime"] = generic_type_conversion,
+            ["datetime-local"] = generic_type_conversion,
+            ["date-local"] = generic_type_conversion,
+            ["time-local"] = generic_type_conversion
+        }
+        sm.input = str
+        sm.i = 1
+        sm.filename = "encode process"
+
+        -- performing the same setup as in close_other_value, should set values correctly to run validate_datetime
+        sm._, sm.end_seq, sm.match = sm.input:find("^([^ #\r\n,%[{%]}]+)", sm.i)
+        sm.i = sm.end_seq + 1
+
+        -- TODO: wrap in pcall
+        if validate_datetime(sm, sm.match) then
+            if sm.value_type == "datetime" or sm.value_type == "datetime-local" or
+                sm.value_type == "date-local" or sm.value_type == "time-local" then
+                return sm.value as string
+            end
+        end
+    end
+
+    local escaped_str = {'"'}
+
+    local byte: integer
+    local i = 1
+    local _: integer
+    local end_seq: integer
+    local match: string
+    local found_multiline = false
+    while i <= #str do
+        byte = sbyte(str, i)
+        if multiline and str:find("^\r?\n", i) then
+            _, end_seq, match = str:find("^(\r?\n)", i)
+            found_multiline = true
+            i = end_seq
+            table.insert(escaped_str, match)
+        elseif short_sequences[byte] then
+            table.insert(escaped_str, short_sequences[byte])
+        elseif byte < 32 or byte == 127 then
+            table.insert(escaped_str, "\\x" .. string.format("%02x", byte))
+        else
+            -- should hopefully result in fewer string creations!
+            _, end_seq, match = str:find("^([a-zA-Z0-9-_]+)", i)
+            if end_seq then
+                i = end_seq
+                table.insert(escaped_str, match)
+            else
+                table.insert(escaped_str, str:sub(i,i))
+            end
+        end
+        i = i + 1
+    end
+    if found_multiline then
+        escaped_str[1] = '"""'
+    end
+    table.insert(escaped_str, escaped_str[1])
+
+    local final_string = table.concat(escaped_str)
+    if not validate_utf8(final_string, true) then
+        error("String is not valid UTF-8, cannot encode to TOML")
+    end
+    return final_string
+
+end
+
+local function escape_key(str: string): string
+    if str:find("^[A-Za-z0-9_-]+$") then
+        return str
+    else
+        return escape_string(str, false, true)
+    end
+end
+
+local to_inf_and_beyound: {string: boolean} = {
+   ["inf"] = true,
+   ["-inf"] = true,
+   ["nan"] = true,
+   ["-nan"] = true
+}
+
+-- Using a slightly modified version from https://stackoverflow.com/a/69827191
+local function float_to_string(x: number): string
+   -- a table key can't be nan in Lua, and I would've rather checked for equality with
+   -- math.huge/nan (as 0/0), but (0/0) != (0/0) in Lua so I think this is probably fine.
+   if to_inf_and_beyound[tostring(x)] then
+      return tostring(x)
+   end
+   for precision = 15, 17 do
+      -- Use a 2-layer format to try different precisions with %g.
+      local s <const> = ('%%.%dg'):format(precision):format(x)
+      -- See if s is an exact representation of x.
+      if tonumber(s) == x then
+         return s
+      end
+   end
+   -- fallback in case we can't get the precision.
+   return tostring(x)
+end
+
+local function encode_element(element: any, allow_multiline_strings: boolean): string
+    if type(element) == "table" then
+        local encoded_string = {}
+        if is_array(element) then
+            table.insert(encoded_string, "[")
+
+            local remove_trailing_comma = false
+            for _, array_element in ipairs(element as {any}) do
+                remove_trailing_comma = true
+                table.insert(encoded_string, encode_element(array_element, allow_multiline_strings))
+                table.insert(encoded_string, ", ")
+            end
+            if remove_trailing_comma then table.remove(encoded_string) end
+
+            table.insert(encoded_string, "]")
+
+            return table.concat(encoded_string)
+
+        else
+            table.insert(encoded_string, "{")
+
+            local remove_trailing_comma = false
+            for k, v in pairs(element as {string: any}) do
+                remove_trailing_comma = true
+                table.insert(encoded_string, k)
+                table.insert(encoded_string, " = ")
+                table.insert(encoded_string, encode_element(v, allow_multiline_strings))
+                table.insert(encoded_string, ", ")
+            end
+            if remove_trailing_comma then table.remove(encoded_string) end
+            
+            table.insert(encoded_string, "}")
+
+            return table.concat(encoded_string)
+
+        end
+
+    elseif type(element) == "string" then
+        return escape_string(element as string, allow_multiline_strings, false)
+    
+    elseif type(element) == "number" then
+        return float_to_string(element as number)
+    
+    elseif type(element) == "boolean" then
+        return tostring(element)
+
+    else
+        error("Unable to encode type '" .. type(element) .. "' into a TOML")
+    end
+end
+
+local function encode_depth(encoded_string: {string}, depth: {string})
+    table.insert(encoded_string, '\n[')
+    table.insert(encoded_string, table.concat(depth, '.'))
+    table.insert(encoded_string, ']\n')
+end
+
+local function encoder(input_table: any, encoded_string: {string}, depth: {string}, options: EncoderOptions): {string}
+    local printed_table_info = false
+    for k, v in pairs(input_table as {string: any}) do
+        if type(v) ~= "table" or (type(v) == "table" and is_array(v)) then
+            if not printed_table_info and #depth > 0 then
+                encode_depth(encoded_string, depth)
+                printed_table_info = true
+            end
+            table.insert(encoded_string, escape_key(k))
+            table.insert(encoded_string, " = ")
+            table.insert(encoded_string, encode_element(v, options.allow_multiline_strings))
+            table.insert(encoded_string, "\n")
+        end
+    end
+    for k, v in pairs(input_table as {string: any}) do
+        if type(v) == "table" and not is_array(v) then
+            if next(v as {any:any}) == nil then
+                table.insert(depth, escape_key(k))
+                encode_depth(encoded_string, depth)
+                table.remove(depth)
+
+            -- descend
+            else
+                table.insert(depth, escape_key(k))
+                encoder(v, encoded_string, depth, options)
+                table.remove(depth)
+            end
+        end
+    end
+    return encoded_string
+end
+
+function tinytoml.encode(input_table: any, options?: EncoderOptions): string
+    options = options or {
+        allow_multiline_strings = false
+    }
+    return table.concat(encoder(input_table, {}, {}, options))
+end
+
 return tinytoml
 

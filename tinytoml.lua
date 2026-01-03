@@ -1177,4 +1177,232 @@ function tinytoml.parse(filename, options)
    return sm.output
 end
 
+
+
+
+
+
+
+local function is_array(input_table)
+   local count = #(input_table)
+   return count > 0 and next(input_table, count) == nil
+end
+
+local short_sequences = {
+   [sbyte('\b')] = '\\b',
+   [sbyte('\t')] = '\\t',
+   [sbyte('\n')] = '\\n',
+   [sbyte('\f')] = '\\f',
+   [sbyte('\r')] = '\\r',
+   [sbyte('\t')] = '\\t',
+   [sbyte('\\')] = '\\\\',
+   [sbyte('"')] = '\\"',
+}
+
+local function escape_string(str, multiline, is_key)
+
+
+   if not is_key and str:find("%d%d") then
+
+
+
+
+      local sm = {}
+      sm.type_conversion = {
+         ["datetime"] = generic_type_conversion,
+         ["datetime-local"] = generic_type_conversion,
+         ["date-local"] = generic_type_conversion,
+         ["time-local"] = generic_type_conversion,
+      }
+      sm.input = str
+      sm.i = 1
+      sm.filename = "encode process"
+
+
+      sm._, sm.end_seq, sm.match = sm.input:find("^([^ #\r\n,%[{%]}]+)", sm.i)
+      sm.i = sm.end_seq + 1
+
+
+      if validate_datetime(sm, sm.match) then
+         if sm.value_type == "datetime" or sm.value_type == "datetime-local" or
+            sm.value_type == "date-local" or sm.value_type == "time-local" then
+            return sm.value
+         end
+      end
+   end
+
+   local escaped_str = { '"' }
+
+   local byte
+   local i = 1
+   local _
+   local end_seq
+   local match
+   local found_multiline = false
+   while i <= #str do
+      byte = sbyte(str, i)
+      if multiline and str:find("^\r?\n", i) then
+         _, end_seq, match = str:find("^(\r?\n)", i)
+         found_multiline = true
+         i = end_seq
+         table.insert(escaped_str, match)
+      elseif short_sequences[byte] then
+         table.insert(escaped_str, short_sequences[byte])
+      elseif byte < 32 or byte == 127 then
+         table.insert(escaped_str, "\\x" .. string.format("%02x", byte))
+      else
+
+         _, end_seq, match = str:find("^([a-zA-Z0-9-_]+)", i)
+         if end_seq then
+            i = end_seq
+            table.insert(escaped_str, match)
+         else
+            table.insert(escaped_str, str:sub(i, i))
+         end
+      end
+      i = i + 1
+   end
+   if found_multiline then
+      escaped_str[1] = '"""'
+   end
+   table.insert(escaped_str, escaped_str[1])
+
+   local final_string = table.concat(escaped_str)
+   if not validate_utf8(final_string, true) then
+      error("String is not valid UTF-8, cannot encode to TOML")
+   end
+   return final_string
+
+end
+
+local function escape_key(str)
+   if str:find("^[A-Za-z0-9_-]+$") then
+      return str
+   else
+      return escape_string(str, false, true)
+   end
+end
+
+local to_inf_and_beyound = {
+   ["inf"] = true,
+   ["-inf"] = true,
+   ["nan"] = true,
+   ["-nan"] = true,
+}
+
+
+local function float_to_string(x)
+
+
+   if to_inf_and_beyound[tostring(x)] then
+      return tostring(x)
+   end
+   for precision = 15, 17 do
+
+      local s = ('%%.%dg'):format(precision):format(x)
+
+      if tonumber(s) == x then
+         return s
+      end
+   end
+
+   return tostring(x)
+end
+
+local function encode_element(element, allow_multiline_strings)
+   if type(element) == "table" then
+      local encoded_string = {}
+      if is_array(element) then
+         table.insert(encoded_string, "[")
+
+         local remove_trailing_comma = false
+         for _, array_element in ipairs(element) do
+            remove_trailing_comma = true
+            table.insert(encoded_string, encode_element(array_element, allow_multiline_strings))
+            table.insert(encoded_string, ", ")
+         end
+         if remove_trailing_comma then table.remove(encoded_string) end
+
+         table.insert(encoded_string, "]")
+
+         return table.concat(encoded_string)
+
+      else
+         table.insert(encoded_string, "{")
+
+         local remove_trailing_comma = false
+         for k, v in pairs(element) do
+            remove_trailing_comma = true
+            table.insert(encoded_string, k)
+            table.insert(encoded_string, " = ")
+            table.insert(encoded_string, encode_element(v, allow_multiline_strings))
+            table.insert(encoded_string, ", ")
+         end
+         if remove_trailing_comma then table.remove(encoded_string) end
+
+         table.insert(encoded_string, "}")
+
+         return table.concat(encoded_string)
+
+      end
+
+   elseif type(element) == "string" then
+      return escape_string(element, allow_multiline_strings, false)
+
+   elseif type(element) == "number" then
+      return float_to_string(element)
+
+   elseif type(element) == "boolean" then
+      return tostring(element)
+
+   else
+      error("Unable to encode type '" .. type(element) .. "' into a TOML")
+   end
+end
+
+local function encode_depth(encoded_string, depth)
+   table.insert(encoded_string, '\n[')
+   table.insert(encoded_string, table.concat(depth, '.'))
+   table.insert(encoded_string, ']\n')
+end
+
+local function encoder(input_table, encoded_string, depth, options)
+   local printed_table_info = false
+   for k, v in pairs(input_table) do
+      if type(v) ~= "table" or (type(v) == "table" and is_array(v)) then
+         if not printed_table_info and #depth > 0 then
+            encode_depth(encoded_string, depth)
+            printed_table_info = true
+         end
+         table.insert(encoded_string, escape_key(k))
+         table.insert(encoded_string, " = ")
+         table.insert(encoded_string, encode_element(v, options.allow_multiline_strings))
+         table.insert(encoded_string, "\n")
+      end
+   end
+   for k, v in pairs(input_table) do
+      if type(v) == "table" and not is_array(v) then
+         if next(v) == nil then
+            table.insert(depth, escape_key(k))
+            encode_depth(encoded_string, depth)
+            table.remove(depth)
+
+
+         else
+            table.insert(depth, escape_key(k))
+            encoder(v, encoded_string, depth, options)
+            table.remove(depth)
+         end
+      end
+   end
+   return encoded_string
+end
+
+function tinytoml.encode(input_table, options)
+   options = options or {
+      allow_multiline_strings = false,
+   }
+   return table.concat(encoder(input_table, {}, {}, options))
+end
+
 return tinytoml
