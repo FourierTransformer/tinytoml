@@ -72,6 +72,29 @@ local enum states
     "?" -- function decides next state
 end
 
+local enum TOML_anchors
+    "objectives"
+    "preliminaries"
+    "comment"
+    "keyvalue-pair"
+    "keys"
+    "string"
+    "integer"
+    "float"
+    "boolean"
+    "offset-date-time"
+    "local-date-time"
+    "local-date"
+    "local-time"
+    "array"
+    "table"
+    "inline-table"
+    "array-of-tables"
+    "filename-extension"
+    "mime-type"
+    "abnf-grammar"
+end
+
 local record MTType
     type: MetaType
 end
@@ -112,6 +135,7 @@ local record StateMachine
     -- added for conveinence
     mode: states -- needed to determine where inline tables can output
     line_number: integer -- current processed line, used in error messages
+    line_number_char_index: integer -- string index of the latest newline
     filename: string -- used in error message
 
     -- final output and current table pointer
@@ -138,15 +162,25 @@ local chars: {string:integer} = {
     LF = sbyte("\n")
 }
 
-local function _error(sm: StateMachine, message: string, anchor?: string)
-    local error_message = {"In ", sm.filename, " line ", sm.line_number, ": ", message}
+local function _error(sm: StateMachine, message: string, anchor?: TOML_anchors)
+    local error_message = {"\n\nIn '", sm.filename, "', line ", sm.line_number}
+
+    local _, end_line = sm.input:find(".-\n", sm.line_number_char_index)
+
+    error_message[#error_message + 1] = ":\n\n  "
+    error_message[#error_message + 1] = sm.line_number
+    error_message[#error_message + 1] = " | "
+    error_message[#error_message + 1] = sm.input:sub(sm.line_number_char_index, end_line)
+    error_message[#error_message + 1] = (end_line and "\n" or "\n\n")
+    error_message[#error_message + 1] = message
+    error_message[#error_message + 1] = "\n"
 
     if anchor ~= nil then
-        error_message[#error_message + 1] = "\n\n\t See https://toml.io/en/v"
+        error_message[#error_message + 1] = "\nSee https://toml.io/en/v"
         error_message[#error_message + 1] = TOML_VERSION
         error_message[#error_message + 1] = "#"
         error_message[#error_message + 1] = anchor
-        error_message[#error_message + 1] = " for more details\n"
+        error_message[#error_message + 1] = " for more details"
     end
 
     error(table.concat(error_message))
@@ -157,7 +191,7 @@ local function _nsmerror(message: string, input: string, byte: integer, anchor?:
     local error_message = {"on byte ", byte, ": ", message, "\nnear: ", string.sub(input, byte-25, byte+25)}
 
     if anchor ~= nil then
-        error_message[#error_message + 1] = "\n\n\t See https://toml.io/en/v"
+        error_message[#error_message + 1] = "\n\n  See https://toml.io/en/v"
         error_message[#error_message + 1] = TOML_VERSION
         error_message[#error_message + 1] = "#"
         error_message[#error_message + 1] = anchor
@@ -266,6 +300,7 @@ local function find_newline(sm: StateMachine)
     end
     sm.line_number = sm.line_number + 1
     sm.i = sm.end_seq + 1
+    sm.line_number_char_index = sm.i
 end
 
 local escape_sequences: {string:string} = {
@@ -369,7 +404,7 @@ local function close_string(sm: StateMachine)
                 output[#output+1] = escape
             else
                 sm._, sm._, sm.match = sm.input:find("^(%S*)", sm.i+1)
-                _error(sm, "TOML only allows specific escape sequences. Invalid escape sequence found: \\" .. sm.match, "string")
+                _error(sm, "TOML only allows specific escape sequences. Invalid escape sequence found: '\\" .. sm.match .. "'", "string")
             end
 
             start_field = sm.i + 1
@@ -493,12 +528,12 @@ local function close_bare_string(sm: StateMachine)
         sm.value = sm.match
         sm.value_type = "string"
     else
-        _error(sm, "Bare keys can only contain 'a-zA-Z0-9-_'. Invalid bare key found : " .. sm.input:sub(sm.i, sm.i+50))
+        _error(sm, "Bare keys can only contain 'a-zA-Z0-9-_'. Invalid bare key found: '" .. sm.input:sub(sm.input:find("[^ #\r\n,]+", sm.i)) .. "'", "keys")
     end
 end
 
 -- sm is only passed in for error handling...
-local function remove_underscores_number(sm:StateMachine, number: string, anchor: string): string
+local function remove_underscores_number(sm:StateMachine, number: string, anchor: TOML_anchors): string
     if number:find("_") then
         if number:find("__") then _error(sm, "Numbers cannot have consecutive underscores. Found ".. anchor ..": " .. number, anchor) end
         if number:find("^_") or number:find("_$") then _error(sm, "Underscores are not allowed at beginning or end of a number. Found " .. anchor .." : " .. number, anchor) end
@@ -517,7 +552,7 @@ local integer_match: {string:{string, integer}} = {
 local function validate_integer(sm: StateMachine, value: string): boolean
     sm._, sm._, sm.match = value:find("^([-+]?[%d_]+)$")
     if sm.match then
-        if sm.match:find("^[-+]?0[%d_]") then _error(sm, "Integers can't start with a leading 0. Found integer: " .. sm.match, "integer") end
+        if sm.match:find("^[-+]?0[%d_]") then _error(sm, "Integers can't start with a leading 0. Found integer: '" .. sm.match .. "'", "integer") end
         sm.match = remove_underscores_number(sm, sm.match, "integer")
         sm.value = _tointeger(sm.match)
         sm.value_type = "integer"
@@ -572,13 +607,13 @@ local function validate_datetime(sm: StateMachine, value: string): boolean
     local hour, min, sec: string, string, string
     sm._, sm._, sm.match, hour, min, sm.ext = value:find("^((%d%d):(%d%d))(.*)$") as (integer, integer, string, string, string, string)
     if sm.match then
-        if _tointeger(hour) > 23 then _error(sm, "Hours must be less than 24. Found hour: " .. hour .. "in: " .. sm.match, "local-time") end
-        if _tointeger(min) > 59 then _error(sm, "Minutes must be less than 60. Found minute: " .. min .. "in: " .. sm.match, "local-time") end
+        if _tointeger(hour) > 23 then _error(sm, "Hours must be less than 24. Found hour: " .. hour .. " in: " .. sm.match, "local-time") end
+        if _tointeger(min) > 59 then _error(sm, "Minutes must be less than 60. Found minute: " .. min .. " in: " .. sm.match, "local-time") end
     
         if sm.ext ~= "" then
             sm._, sm._, sec = sm.ext:find("^:(%d%d)$")
             if sec then
-                if _tointeger(sec) > 60 then _error(sm, "Seconds must be less than 61. Found second: " .. sec .. "in: " .. sm.match, "local-time") end
+                if _tointeger(sec) > 60 then _error(sm, "Seconds must be less than 61. Found second: " .. sec .. " in: " .. sm.match, "local-time") end
                 sm.value_type = "time-local"
                 sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
                 return true
@@ -586,7 +621,7 @@ local function validate_datetime(sm: StateMachine, value: string): boolean
 
             sm._, sm._, sec = sm.ext:find("^:(%d%d)%.%d+$")
             if sec then
-                if _tointeger(sec) > 60 then _error(sm, "Seconds must be less than 61. Found second: " .. sec .. "in: " .. sm.match, "local-time") end
+                if _tointeger(sec) > 60 then _error(sm, "Seconds must be less than 61. Found second: " .. sec .. " in: " .. sm.match, "local-time") end
                 sm.value_type = "time-local"
                 sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
                 return true
@@ -603,7 +638,7 @@ local function validate_datetime(sm: StateMachine, value: string): boolean
     sm._, sm._, sm.match, year_s, month_s, day_s = value:find("^((%d%d%d%d)%-(%d%d)%-(%d%d))$") as (integer, integer, string, string, string, string)
     if sm.match then
         year, month, day = _tointeger(year_s), _tointeger(month_s), _tointeger(day_s)
-        if month == 0 or month > 12 then _error(sm, "Month must be between 01-12. Found month: " .. month .. "in: " .. sm.match, "local-date") end
+        if month == 0 or month > 12 then _error(sm, "Month must be between 01-12. Found month: " .. month .. " in: " .. sm.match, "local-date") end
         if day == 0 or day > max_days_in_month[month] then _error(sm, "Too many days in the month. Found " .. day .. " days in month " .. month .. ", which only has " .. max_days_in_month[month as integer] .. " days in: " .. sm.match, "local-date") end
         if month == 2 then
             local leap_year = (year % 4 == 0) and not(year % 100 == 0) or (year % 400 == 0)
@@ -634,15 +669,15 @@ local function validate_datetime(sm: StateMachine, value: string): boolean
         value:find("^((%d%d%d%d)%-(%d%d)%-(%d%d)[Tt ](%d%d):(%d%d))(.*)$")
         as (integer, integer, string, string, string, string, string, string, string)
     if sm.match then
-        if _tointeger(hour) > 23 then _error(sm, "Hours must be less than 24. Found hour: " .. hour .. "in: " .. sm.match, "") end
-        if _tointeger(min) > 59 then _error(sm, "Minutes must be less than 60. Found minute: " .. min .. "in: " .. sm.match) end
+        if _tointeger(hour) > 23 then _error(sm, "Hours must be less than 24. Found hour: " .. hour .. " in: " .. sm.match, "local-time") end
+        if _tointeger(min) > 59 then _error(sm, "Minutes must be less than 60. Found minute: " .. min .. " in: " .. sm.match) end
         year, month, day = _tointeger(year_s), _tointeger(month_s), _tointeger(day_s)
-        if month == 0 or month > 12 then _error(sm, "Month must be between 01-12. Found month: " .. month .. "in: " .. sm.match) end
-        if day == 0 or day > max_days_in_month[month] then _error(sm, "Too many days in the month. Found " .. day .. " days in month " .. month .. ", which only has " .. max_days_in_month[month as integer] .. " days in: " .. sm.match, "local-datetime") end
+        if month == 0 or month > 12 then _error(sm, "Month must be between 01-12. Found month: " .. month .. " in: " .. sm.match) end
+        if day == 0 or day > max_days_in_month[month] then _error(sm, "Too many days in the month. Found " .. day .. " days in month " .. month .. ", which only has " .. max_days_in_month[month as integer] .. " days in: " .. sm.match, "local-date-time") end
         if month == 2 then
             local leap_year = (year % 4 == 0) and not(year % 100 == 0) or (year % 400 == 0)
             if leap_year == false then
-                if day > 28 then _error(sm, "Too many days in month. Found " .. day .. " days in month 02, which only has 28 day if it's not a leap year in: " .. sm.match, "local-datetime") end
+                if day > 28 then _error(sm, "Too many days in month. Found " .. day .. " days in month 02, which only has 28 day if it's not a leap year in: " .. sm.match, "local-date-time") end
             end
         end
 
@@ -650,7 +685,7 @@ local function validate_datetime(sm: StateMachine, value: string): boolean
         local temp_ext: string
         sm._, sm._, sec, temp_ext = sm.ext:find("^:(%d%d)(.*)$") as (integer, integer, string, string)
         if sec then
-            if _tointeger(sec) > 60 then _error(sm, "Seconds must be less than 61. Found second: " .. sec .. "in: " .. sm.match) end
+            if _tointeger(sec) > 60 then _error(sm, "Seconds must be less than 61. Found second: " .. sec .. " in: " .. sm.match) end
             sm.match = sm.match .. ":" .. sec
             sm.ext = temp_ext
         else
@@ -670,8 +705,8 @@ local function validate_datetime(sm: StateMachine, value: string): boolean
                 return true
             elseif sm.ext:find("^%.%d+[+-]%d%d:%d%d$") then
                 sm._, sm.end_seq, hour, min = sm.ext:find("^%.%d+[+-](%d%d):(%d%d)$") as (integer, integer, string, string)
-                if _tointeger(hour) > 23 then _error(sm, "Hours must be less than 24. Found hour: " .. hour .. "in: " .. sm.match, "offset-date-time") end
-                if _tointeger(min) > 59 then _error(sm, "Minutes must be less than 60. Found minute: " .. min .. "in: " .. sm.match, "offset-date-time") end
+                if _tointeger(hour) > 23 then _error(sm, "Hours must be less than 24. Found hour: " .. hour .. " in: " .. sm.match, "offset-date-time") end
+                if _tointeger(min) > 59 then _error(sm, "Minutes must be less than 60. Found minute: " .. min .. " in: " .. sm.match, "offset-date-time") end
                 sm.value_type = "datetime"
                 sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
                 return true
@@ -681,8 +716,8 @@ local function validate_datetime(sm: StateMachine, value: string): boolean
                 return true
             elseif sm.ext:find("^[+-]%d%d:%d%d$") then
                 sm._, sm.end_seq, hour, min = sm.ext:find("^[+-](%d%d):(%d%d)$") as (integer, integer, string, string)
-                if _tointeger(hour) > 23 then _error(sm, "Hours must be less than 24. Found hour: " .. hour .. "in: " .. sm.match, "offset-date-time") end
-                if _tointeger(min) > 59 then _error(sm, "Minutes must be less than 60. Found minute: " .. min .. "in: " .. sm.match, "offset-date-time") end
+                if _tointeger(hour) > 23 then _error(sm, "Hours must be less than 24. Found hour: " .. hour .. " in: " .. sm.match, "offset-date-time") end
+                if _tointeger(min) > 59 then _error(sm, "Minutes must be less than 60. Found minute: " .. min .. " in: " .. sm.match, "offset-date-time") end
                 sm.value_type = "datetime"
                 sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
                 return true
@@ -735,7 +770,7 @@ local function close_other_value(sm: StateMachine)
         end
     end
 
-    _error(sm, "Unable to determine type of value for: " .. value)
+    _error(sm, "Unable to determine type of value for: '" .. value .. "'")
 end
 
 local function create_array(sm: StateMachine)
@@ -877,7 +912,7 @@ local function assign_key(sm: StateMachine)
     if sm.multiline_string == false then
         sm.keys[#sm.keys + 1] = sm.value as string
     else
-        _error(sm, "Keys must be a non multi-line string. Found key: " .. tostring(sm.value), "key")
+        _error(sm, "Keys must be a non multi-line string. Found key: '" .. tostring(sm.value) .. "'", "keys")
     end
 
     -- cleared so the value doesn't get reused during empty table/array assignments
@@ -903,7 +938,7 @@ local function assign_value(sm: StateMachine)
             out_table[sm.keys[i]] = {}
             meta_out_table[sm.keys[i]] = {type="value-dictionary"}
         elseif (meta_out_table[sm.keys[i]] as MTType).type == "value" then
-            _error(sm, "Cannot key append over an exsiting value")
+            _error(sm, "Cannot append key over a previously set value")
         elseif (meta_out_table[sm.keys[i]] as MTType).type == "dictionary" then
             _error(sm, "Cannot override existing table")
         elseif (meta_out_table[sm.keys[i]] as MTType).type == "array" then
@@ -917,7 +952,7 @@ local function assign_value(sm: StateMachine)
     local last_table = sm.keys[#sm.keys]
 
     if out_table[last_table] ~= nil then
-        _error(sm, "Cannot override existing value")
+        _error(sm, "Cannot override previously defined key '" .. sm.keys[#sm.keys] .. "'")
     end
 
     out_table[last_table] = output
@@ -1110,6 +1145,7 @@ function tinytoml.parse(filename: string, options?: TinyTomlOptions): {string:an
     sm.output = {}
     sm.meta_table = {}
     sm.line_number = 1
+    sm.line_number_char_index = 1
     sm.nested_arrays = 0
     sm.inline_table_backup = {}
     sm.nested_inline_tables = 0
@@ -1165,7 +1201,7 @@ function tinytoml.parse(filename: string, options?: TinyTomlOptions): {string:an
         _error(sm, "Unable to find closing bracket of array", "array")
     end
     if sm.mode == "key" then
-        _error(sm, "Incorrect formatting for key", "key")
+        _error(sm, "Incorrect formatting for key", "keys")
     end
     if sm.mode == "value" then
         _error(sm, "The key never had a value assigned", "keyvalue-pair")
