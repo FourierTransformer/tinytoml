@@ -187,7 +187,7 @@ local function _error(sm: StateMachine, message: string, anchor?: TOML_anchors)
 end
 
 -- non state machine error
-local function _nsmerror(message: string, input: string, byte: integer, anchor?: string)
+local function _nsmerror(message: string, input: string, byte: integer, anchor?: TOML_anchors)
     local error_message = {"on byte ", byte, ": ", message, "\nnear: ", string.sub(input, byte-25, byte+25)}
 
     if anchor ~= nil then
@@ -236,7 +236,7 @@ local function validate_utf8(input: string, toml_sub?: boolean): boolean, intege
         if byte <= 127 then
             if toml_sub then
                 if byte < 9 then _nsmerror("TOML only allows some control characters, but they must be escaped in double quoted strings", input, i, "string")
-                elseif byte == chars.CR and sbyte(input, i+1) ~= chars.LF then _nsmerror("TOML requires all \\r be followed by \\n", input, i, "spec")
+                elseif byte == chars.CR and sbyte(input, i+1) ~= chars.LF then _nsmerror("TOML requires all \\r be followed by \\n", input, i, "preliminaries")
                 elseif byte >= 11 and byte <= 31 and byte ~= 13 then _nsmerror("TOML only allows some control characters, but they must be escaped in double quoted strings", input, i, "string")
                 elseif byte == 127 then _nsmerror("TOML only allows some control characters, but they must be escaped in double quoted strings", input, i, "string") end
             end
@@ -343,7 +343,7 @@ local function handle_backslash_escape(sm: StateMachine): string, boolean
     if sm.match then
         local codepoint_to_insert = _utf8char(tonumber(sm.ext, 16))
         if not validate_utf8(codepoint_to_insert) then
-            _error(sm, "Escaped UTF-8 sequence not valid UTF-8 character: \\" .. sm.match .. sm.ext, "string")
+            _error(sm, "Escaped UTF-8 sequence not valid UTF-8 character: '\\" .. sm.match .. sm.ext .. "'", "string")
         end
         sm.i = sm.end_seq
         return codepoint_to_insert, false
@@ -357,7 +357,7 @@ local function handle_backslash_escape(sm: StateMachine): string, boolean
     if sm.match then
         local codepoint_to_insert = _utf8char(tonumber(sm.ext, 16))
         if not validate_utf8(codepoint_to_insert) then
-            _error(sm, "Escaped UTF-8 sequence not valid UTF-8 character: \\" .. sm.match .. sm.ext, "string")
+            _error(sm, "Escaped UTF-8 sequence not valid UTF-8 character: '\\" .. sm.match .. sm.ext .. "'", "string")
         end
         sm.i = sm.end_seq
         return codepoint_to_insert, false
@@ -574,8 +574,8 @@ end
 local function validate_float(sm: StateMachine, value: string): boolean
     sm._, sm._, sm.match, sm.ext = value:find("^([-+]?[%d_]+%.[%d_]+)(.*)$") as (integer, integer, string, string)
     if sm.match then
-        if sm.match:find("%._") or sm.match:find("_%.") then _error(sm, "Underscores in floats must have a number on either side. Found float: " .. sm.match .. sm.ext, "float") end
-        if sm.match:find("^[-+]?0[%d_]") then _error(sm, "Floats can't start with a leading 0. Found float: " .. sm.match .. sm.ext, "float") end
+        if sm.match:find("%._") or sm.match:find("_%.") then _error(sm, "Underscores in floats must have a number on either side. Found float: '" .. sm.match .. sm.ext .. "'", "float") end
+        if sm.match:find("^[-+]?0[%d_]") then _error(sm, "Floats can't start with a leading 0. Found float: '" .. sm.match .. sm.ext .. "'", "float") end
         sm.match = remove_underscores_number(sm, sm.match, "float")
         if sm.ext ~= "" then
             if sm.ext:find("^[eE][-+]?[%d_]+$") then
@@ -593,7 +593,7 @@ local function validate_float(sm: StateMachine, value: string): boolean
 
     sm._, sm._, sm.match = value:find("^([-+]?[%d_]+[eE][-+]?[%d_]+)$")
     if sm.match then
-        if sm.match:find("_[eE]") or sm.match:find("[eE]_") then _error(sm, "Underscores in floats cannot be before or after the e. Found float: " .. sm.match .. sm.ext, "float") end
+        if sm.match:find("_[eE]") or sm.match:find("[eE]_") then _error(sm, "Underscores in floats cannot be before or after the e. Found float: '" .. sm.match .. sm.ext .. "'", "float") end
         sm.match = remove_underscores_number(sm, sm.match, "float")
         sm.value = tonumber(sm.match)
         sm.value_type = "float"
@@ -701,7 +701,6 @@ local function validate_datetime(sm: StateMachine, value: string): boolean
 
         if sm.ext ~= "" then
             sm.match = sm.match .. sm.ext
-            --TODO: maybe refactor at some point?
             if sm.ext:find("^%.%d+$") then
                 sm.value_type = "datetime-local"
                 sm.value = sm.type_conversion[sm.value_type](sm.match)
@@ -756,7 +755,7 @@ local function close_other_value(sm: StateMachine)
     local successful_type: boolean
     sm._, sm.end_seq, sm.match = sm.input:find("^([^ #\r\n,%[{%]}]+)", sm.i)
     if sm.match == nil then
-        _error(sm, "Key has been assigned, but value doesn't seem to exist")
+        _error(sm, "Key has been assigned, but value doesn't seem to exist", "keyvalue-pair")
     end
     sm.i = sm.end_seq + 1
 
@@ -1164,7 +1163,7 @@ function tinytoml.parse(filename: string, options?: TinyTomlOptions): {string:an
 
     local valid, char = validate_utf8(sm.input, true) as (boolean, integer)
     if not valid then
-        _nsmerror("Invalid UTF-8 character detected in input", sm.input, char, "spec")
+        _nsmerror("Invalid UTF-8 character detected in input", sm.input, char, "preliminaries")
     end
 
     sm.mode = "start_of_line"
@@ -1209,7 +1208,7 @@ function tinytoml.parse(filename: string, options?: TinyTomlOptions): {string:an
         _error(sm, "Incorrect formatting for key", "keys")
     end
     if sm.mode == "value" then
-        _error(sm, "The key never had a value assigned", "keyvalue-pair")
+        _error(sm, "Key has been assigned, but value doesn't seem to exist", "keyvalue-pair")
     end
     if sm.nested_inline_tables ~= 0 then
         _error(sm, "Unable to find closing bracket of inline table", "inline-table")

@@ -574,8 +574,8 @@ end
 local function validate_float(sm, value)
    sm._, sm._, sm.match, sm.ext = value:find("^([-+]?[%d_]+%.[%d_]+)(.*)$")
    if sm.match then
-      if sm.match:find("%._") or sm.match:find("_%.") then _error(sm, "Underscores in floats must have a number on either side. Found float: " .. sm.match .. sm.ext, "float") end
-      if sm.match:find("^[-+]?0[%d_]") then _error(sm, "Floats can't start with a leading 0. Found float: " .. sm.match .. sm.ext, "float") end
+      if sm.match:find("%._") or sm.match:find("_%.") then _error(sm, "Underscores in floats must have a number on either side. Found float: " .. sm.match .. sm.ext .. "'", "float") end
+      if sm.match:find("^[-+]?0[%d_]") then _error(sm, "Floats can't start with a leading 0. Found float: '" .. sm.match .. sm.ext .. "'", "float") end
       sm.match = remove_underscores_number(sm, sm.match, "float")
       if sm.ext ~= "" then
          if sm.ext:find("^[eE][-+]?[%d_]+$") then
@@ -593,7 +593,7 @@ local function validate_float(sm, value)
 
    sm._, sm._, sm.match = value:find("^([-+]?[%d_]+[eE][-+]?[%d_]+)$")
    if sm.match then
-      if sm.match:find("_[eE]") or sm.match:find("[eE]_") then _error(sm, "Underscores in floats cannot be before or after the e. Found float: " .. sm.match .. sm.ext, "float") end
+      if sm.match:find("_[eE]") or sm.match:find("[eE]_") then _error(sm, "Underscores in floats cannot be before or after the e. Found float: '" .. sm.match .. sm.ext .. "'", "float") end
       sm.match = remove_underscores_number(sm, sm.match, "float")
       sm.value = tonumber(sm.match)
       sm.value_type = "float"
@@ -701,7 +701,6 @@ local function validate_datetime(sm, value)
 
       if sm.ext ~= "" then
          sm.match = sm.match .. sm.ext
-
          if sm.ext:find("^%.%d+$") then
             sm.value_type = "datetime-local"
             sm.value = sm.type_conversion[sm.value_type](sm.match)
@@ -756,7 +755,7 @@ local function close_other_value(sm)
    local successful_type
    sm._, sm.end_seq, sm.match = sm.input:find("^([^ #\r\n,%[{%]}]+)", sm.i)
    if sm.match == nil then
-      _error(sm, "Key has been assigned, but value doesn't seem to exist")
+      _error(sm, "Key has been assigned, but value doesn't seem to exist", "keyvalue-pair")
    end
    sm.i = sm.end_seq + 1
 
@@ -1209,7 +1208,7 @@ function tinytoml.parse(filename, options)
       _error(sm, "Incorrect formatting for key", "keys")
    end
    if sm.mode == "value" then
-      _error(sm, "The key never had a value assigned", "keyvalue-pair")
+      _error(sm, "Key has been assigned, but value doesn't seem to exist", "keyvalue-pair")
    end
    if sm.nested_inline_tables ~= 0 then
       _error(sm, "Unable to find closing bracket of inline table", "inline-table")
