@@ -165,11 +165,10 @@ local chars: {string:integer} = {
 local function _error(sm: StateMachine, message: string, anchor?: TOML_anchors)
     local error_message = {"\n\nIn '", sm.filename, "', line ", sm.line_number}
 
-    local _, end_line = sm.input:find(".-\n", sm.line_number_char_index)
-
     error_message[#error_message + 1] = ":\n\n  "
     error_message[#error_message + 1] = sm.line_number
     error_message[#error_message + 1] = " | "
+    local _, end_line = sm.input:find(".-\n", sm.line_number_char_index)
     error_message[#error_message + 1] = sm.input:sub(sm.line_number_char_index, end_line)
     error_message[#error_message + 1] = (end_line and "\n" or "\n\n")
     error_message[#error_message + 1] = message
@@ -181,21 +180,6 @@ local function _error(sm: StateMachine, message: string, anchor?: TOML_anchors)
         error_message[#error_message + 1] = "#"
         error_message[#error_message + 1] = anchor
         error_message[#error_message + 1] = " for more details"
-    end
-
-    error(table.concat(error_message))
-end
-
--- non state machine error
-local function _nsmerror(message: string, input: string, byte: integer, anchor?: TOML_anchors)
-    local error_message = {"on byte ", byte, ": ", message, "\nnear: ", string.sub(input, byte-25, byte+25)}
-
-    if anchor ~= nil then
-        error_message[#error_message + 1] = "\n\n  See https://toml.io/en/v"
-        error_message[#error_message + 1] = TOML_VERSION
-        error_message[#error_message + 1] = "#"
-        error_message[#error_message + 1] = anchor
-        error_message[#error_message + 1] = " for more details\n"
     end
 
     error(table.concat(error_message))
@@ -226,8 +210,8 @@ local _utf8char = utf8 and utf8.char or function(cp: number): string
     return string.char(240 + (cp as integer), 128 + (suffix as integer), c3 as integer, c4 as integer)
 end
 
-local function validate_utf8(input: string, toml_sub?: boolean): boolean, integer
-    local i, len = 1, #input
+local function validate_utf8(input: string, toml_sub?: boolean): boolean, integer, integer, string
+    local i, len, line_number, line_number_start = 1, #input, 1, 1
     local byte, second, third, fourth: integer, integer, integer, integer = 0, 129, 129, 129
     toml_sub = toml_sub or false
     while i <= len do
@@ -235,10 +219,13 @@ local function validate_utf8(input: string, toml_sub?: boolean): boolean, intege
 
         if byte <= 127 then
             if toml_sub then
-                if byte < 9 then _nsmerror("TOML only allows some control characters, but they must be escaped in double quoted strings", input, i, "string")
-                elseif byte == chars.CR and sbyte(input, i+1) ~= chars.LF then _nsmerror("TOML requires all \\r be followed by \\n", input, i, "preliminaries")
-                elseif byte >= 11 and byte <= 31 and byte ~= 13 then _nsmerror("TOML only allows some control characters, but they must be escaped in double quoted strings", input, i, "string")
-                elseif byte == 127 then _nsmerror("TOML only allows some control characters, but they must be escaped in double quoted strings", input, i, "string") end
+                if byte < 9 then return false, line_number, line_number_start, "TOML only allows some control characters, but they must be escaped in double quoted strings"
+                elseif byte == chars.CR and sbyte(input, i+1) ~= chars.LF then return false, line_number, line_number_start, "TOML requires all '\\r' be followed by '\\n'"
+                elseif byte == chars.LF then
+                    line_number = line_number + 1
+                    line_number_start = i
+                elseif byte >= 11 and byte <= 31 and byte ~= 13 then return false, line_number, line_number_start, "TOML only allows some control characters, but they must be escaped in double quoted strings"
+                elseif byte == 127 then return false, line_number, line_number_start, "TOML only allows some control characters, but they must be escaped in double quoted strings" end
             end
             i = i + 1
 
@@ -249,13 +236,13 @@ local function validate_utf8(input: string, toml_sub?: boolean): boolean, intege
         elseif byte == 224 then
             second = sbyte(input, i+1); third = sbyte(input, i+2)
             -- overlong
-            if second ~= nil and  second >= 128 and second <= 159 then return false, i end
+            if second ~= nil and  second >= 128 and second <= 159 then return false, line_number, line_number_start, "Invalid UTF-8 Sequence" end
             i = i + 3
 
         elseif byte == 237 then
             second = sbyte(input, i+1); third = sbyte(input, i+2)
             -- surrogate
-            if second ~= nil and second >= 160 and second <= 191 then return false, i end
+            if second ~= nil and second >= 160 and second <= 191 then return false, line_number, line_number_start, "Invalid UTF-8 Sequence" end
             i = i + 3
 
         elseif (byte >= 225 and byte <= 236) or byte == 238 or byte == 239 then
@@ -265,7 +252,7 @@ local function validate_utf8(input: string, toml_sub?: boolean): boolean, intege
         elseif byte == 240 then
             second = sbyte(input, i+1); third = sbyte(input, i+2); fourth = sbyte(input, i+3)
             -- overlong
-            if second ~= nil and second >= 128 and second <= 143 then return false, i end
+            if second ~= nil and second >= 128 and second <= 143 then return false, line_number, line_number_start, "Invalid UTF-8 Sequence" end
             i = i + 4
 
         elseif byte == 241 or byte == 242 or byte == 243 then
@@ -275,21 +262,21 @@ local function validate_utf8(input: string, toml_sub?: boolean): boolean, intege
         elseif byte == 244 then
             second = sbyte(input, i+1); third = sbyte(input, i+2); fourth = sbyte(input, i+3)
             -- exceeds max utf-8
-            if second ~= nil and second >= 160 and second <= 191 then return false, i end
+            if second ~= nil and second >= 160 and second <= 191 then return false, line_number, line_number_start, "Invalid UTF-8 Sequence" end
             i = i + 4
 
         else
             -- can't go this high
-            return false, i
+            return false, line_number, line_number_start, "Invalid UTF-8 Sequence"
         end
 
         -- unfinished (nil) or invalid (not in range)
-        if second == nil or second < 128 or second > 191 then return false, i end
-        if third == nil or third < 128 or third > 191 then return false, i end
-        if fourth == nil or fourth < 128 or fourth > 191 then return false, i end
+        if second == nil or second < 128 or second > 191 then return false, line_number, line_number_start, "Invalid UTF-8 Sequence" end
+        if third == nil or third < 128 or third > 191 then return false, line_number, line_number_start, "Invalid UTF-8 Sequence" end
+        if fourth == nil or fourth < 128 or fourth > 191 then return false, line_number, line_number_start, "Invalid UTF-8 Sequence" end
 
     end
-    return true, i
+    return true
 end
 
 local function find_newline(sm: StateMachine)
@@ -1161,9 +1148,11 @@ function tinytoml.parse(filename: string, options?: TinyTomlOptions): {string:an
     -- empty file is just an empty array
     if sm.input_length == 0 then return {} end
 
-    local valid, char = validate_utf8(sm.input, true) as (boolean, integer)
+    local valid, line_number, line_number_start, message = validate_utf8(sm.input, true)
     if not valid then
-        _nsmerror("Invalid UTF-8 character detected in input", sm.input, char, "preliminaries")
+        sm.line_number = line_number
+        sm.line_number_char_index = line_number_start
+        _error(sm, message, "preliminaries")
     end
 
     sm.mode = "start_of_line"
