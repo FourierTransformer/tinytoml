@@ -162,14 +162,20 @@ local chars: {string:integer} = {
     LF = sbyte("\n")
 }
 
-local function _error(sm: StateMachine, message: string, anchor?: TOML_anchors)
-    local error_message = {"\n\nIn '", sm.filename, "', line ", sm.line_number}
 
-    error_message[#error_message + 1] = ":\n\n  "
+local function replace_control_chars(s: string): string, integer
+  return string.gsub(s, "[\x00-\x08\x0b-\x1f\x7f]", function(c: string): string
+    return string.format("\\x%02x", string.byte(c))
+  end)
+end
+
+local function _error(sm: StateMachine, message: string, anchor?: TOML_anchors)
+    local error_message = {"\n\nIn '", sm.filename, "', line ", sm.line_number, ":\n\n  "}
+
+    local _, end_line = sm.input:find(".-\n", sm.line_number_char_index)
     error_message[#error_message + 1] = sm.line_number
     error_message[#error_message + 1] = " | "
-    local _, end_line = sm.input:find(".-\n", sm.line_number_char_index)
-    error_message[#error_message + 1] = sm.input:sub(sm.line_number_char_index, end_line)
+    error_message[#error_message + 1] = replace_control_chars(sm.input:sub(sm.line_number_char_index, end_line))
     error_message[#error_message + 1] = (end_line and "\n" or "\n\n")
     error_message[#error_message + 1] = message
     error_message[#error_message + 1] = "\n"
@@ -223,7 +229,7 @@ local function validate_utf8(input: string, toml_sub?: boolean): boolean, intege
                 elseif byte == chars.CR and sbyte(input, i+1) ~= chars.LF then return false, line_number, line_number_start, "TOML requires all '\\r' be followed by '\\n'"
                 elseif byte == chars.LF then
                     line_number = line_number + 1
-                    line_number_start = i
+                    line_number_start = i + 1
                 elseif byte >= 11 and byte <= 31 and byte ~= 13 then return false, line_number, line_number_start, "TOML only allows some control characters, but they must be escaped in double quoted strings"
                 elseif byte == 127 then return false, line_number, line_number_start, "TOML only allows some control characters, but they must be escaped in double quoted strings" end
             end
@@ -390,7 +396,7 @@ local function close_string(sm: StateMachine)
             if escape ~= nil then
                 output[#output+1] = escape
             else
-                sm._, sm._, sm.match = sm.input:find("^(%S*)", sm.i+1)
+                sm._, sm._, sm.match = sm.input:find("(.-[^'\"])", sm.i+1)
                 _error(sm, "TOML only allows specific escape sequences. Invalid escape sequence found: '\\" .. sm.match .. "'", "string")
             end
 
@@ -1236,16 +1242,13 @@ local function escape_string(str: string, multiline: boolean, is_key: boolean): 
         -- a valid datetime and return accordingly
         
         -- setting up a _very_ basic StateMachine
-        local sm: StateMachine = {}
+        local sm: StateMachine = {input=str, i=1, filename="encode process", line_number=1, line_number_char_index=1}
         sm.type_conversion = {
             ["datetime"] = generic_type_conversion,
             ["datetime-local"] = generic_type_conversion,
             ["date-local"] = generic_type_conversion,
             ["time-local"] = generic_type_conversion
         }
-        sm.input = str
-        sm.i = 1
-        sm.filename = "encode process"
 
         -- performing the same setup as in close_other_value, should set values correctly to run validate_datetime
         sm._, sm.end_seq, sm.match = sm.input:find("^([^ #\r\n,%[{%]}]+)", sm.i)

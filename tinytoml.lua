@@ -163,12 +163,11 @@ local chars = {
 }
 
 local function _error(sm, message, anchor)
-   local error_message = { "\n\nIn '", sm.filename, "', line ", sm.line_number }
+   local error_message = { "\n\nIn '", sm.filename, "', line ", sm.line_number, ":\n\n  " }
 
-   error_message[#error_message + 1] = ":\n\n  "
+   local _, end_line = sm.input:find(".-\n", sm.line_number_char_index)
    error_message[#error_message + 1] = sm.line_number
    error_message[#error_message + 1] = " | "
-   local _, end_line = sm.input:find(".-\n", sm.line_number_char_index)
    error_message[#error_message + 1] = sm.input:sub(sm.line_number_char_index, end_line)
    error_message[#error_message + 1] = (end_line and "\n" or "\n\n")
    error_message[#error_message + 1] = message
@@ -1236,16 +1235,13 @@ local function escape_string(str, multiline, is_key)
 
 
 
-      local sm = {}
+      local sm = { input = str, i = 1, filename = "encode process", line_number = 1, line_number_char_index = 1 }
       sm.type_conversion = {
          ["datetime"] = generic_type_conversion,
          ["datetime-local"] = generic_type_conversion,
          ["date-local"] = generic_type_conversion,
          ["time-local"] = generic_type_conversion,
       }
-      sm.input = str
-      sm.i = 1
-      sm.filename = "encode process"
 
 
       sm._, sm.end_seq, sm.match = sm.input:find("^([^ #\r\n,%[{%]}]+)", sm.i)
