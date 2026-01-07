@@ -9,6 +9,8 @@ local record TinyTomlOptions
     load_from_string: boolean
     assign_value_function: function(value: any, value_type?: string): any
     type_conversion: {TomlConversionType:function<T>(raw_value: string):T}
+    max_filesize: integer
+    max_nesting_depth: integer
 end
 
 local record tinytoml
@@ -21,7 +23,7 @@ local record tinytoml
 end
 
 local TOML_VERSION = "1.1.0"
-tinytoml._VERSION = "tinytoml 0.1.0"
+tinytoml._VERSION = "tinytoml 1.0.0"
 tinytoml._TOML_VERSION = TOML_VERSION
 tinytoml._DESCRIPTION = "a single-file pure Lua TOML parser"
 tinytoml._URL = "https://github.com/FourierTransformer/tinytoml"
@@ -110,6 +112,7 @@ end
 -- Not entirely sure how to feel about it now, but maybe I'll consider what refactoring looks like later.
 local record StateMachine
     -- variables for processing the input
+    options: TinyTomlOptions
     input_length: integer
     input: string
     i: integer
@@ -170,13 +173,20 @@ local function replace_control_chars(s: string): string, integer
 end
 
 local function _error(sm: StateMachine, message: string, anchor?: TOML_anchors)
-    local error_message = {"\n\nIn '", sm.filename, "', line ", sm.line_number, ":\n\n  "}
+    local error_message = {}
 
-    local _, end_line = sm.input:find(".-\n", sm.line_number_char_index)
-    error_message[#error_message + 1] = sm.line_number
-    error_message[#error_message + 1] = " | "
-    error_message[#error_message + 1] = replace_control_chars(sm.input:sub(sm.line_number_char_index, end_line))
-    error_message[#error_message + 1] = (end_line and "\n" or "\n\n")
+    -- small hack to allow the error messages to work in encoder.
+    -- sm.filename is not present for the encoder, so we can't really display line info.
+    if sm.filename then
+        error_message = {"\n\nIn '", sm.filename, "', line ", sm.line_number, ":\n\n  "}
+
+        local _, end_line = sm.input:find(".-\n", sm.line_number_char_index)
+        error_message[#error_message + 1] = sm.line_number
+        error_message[#error_message + 1] = " | "
+        error_message[#error_message + 1] = replace_control_chars(sm.input:sub(sm.line_number_char_index, end_line))
+        error_message[#error_message + 1] = (end_line and "\n" or "\n\n")
+    end
+
     error_message[#error_message + 1] = message
     error_message[#error_message + 1] = "\n"
 
@@ -772,6 +782,9 @@ end
 
 local function create_array(sm: StateMachine)
     sm.nested_arrays = sm.nested_arrays + 1
+    if sm.nested_arrays >= sm.options.max_nesting_depth then
+        _error(sm, "Maximum nesting depth has exceeded " .. sm.options.max_nesting_depth .. ". If this larger nesting depth is required, feel free to set 'max_nesting_depth' in the parser options.")
+    end
     sm.arrays[sm.nested_arrays] = {}
     sm.i = sm.i + 1
 end
@@ -975,6 +988,10 @@ end
 local function create_inline_table(sm: StateMachine)
     sm.nested_inline_tables = sm.nested_inline_tables + 1
 
+    if sm.nested_inline_tables >= sm.options.max_nesting_depth then
+        _error(sm, "Maximum nesting depth has exceeded " .. sm.options.max_nesting_depth .. ". If this larger nesting depth is required, feel free to set 'max_nesting_depth' in the parser options.")
+    end
+
     local backup: InlineTableSave = {
         previous_state = sm.mode,
         meta_table = sm.meta_table,
@@ -1130,9 +1147,21 @@ function tinytoml.parse(filename: string, options?: TinyTomlOptions): {string:an
                 sm.type_conversion[(key as TomlType)] = value
             end
         end
+        options.max_filesize = options.max_filesize or 100000000
+        options.max_nesting_depth = options.max_nesting_depth or 1000
     else
+        options = {load_from_string = false, max_filesize = 100000000, max_nesting_depth = 1000}
+    end
+
+    sm.options = options
+
+    if options.load_from_string == false then
         local file = io.open(filename, "r")
+        if not file then error("Unable to open file: '" .. filename .. "'") end
+        if file:seek("end") > options.max_filesize then error("Filesize is larger than 100MB. If this is intentional, please set the 'max_filesize' (in bytes) in options") end
+        file:seek("set")
         sm.input = file:read("*all")
+        file:close()
         sm.filename = filename
     end
 
@@ -1242,7 +1271,7 @@ local function escape_string(str: string, multiline: boolean, is_key: boolean): 
         -- a valid datetime and return accordingly
         
         -- setting up a _very_ basic StateMachine
-        local sm: StateMachine = {input=str, i=1, filename="encode process", line_number=1, line_number_char_index=1}
+        local sm: StateMachine = {input=str, i=1, line_number=1, line_number_char_index=1}
         sm.type_conversion = {
             ["datetime"] = generic_type_conversion,
             ["datetime-local"] = generic_type_conversion,
@@ -1254,7 +1283,6 @@ local function escape_string(str: string, multiline: boolean, is_key: boolean): 
         sm._, sm.end_seq, sm.match = sm.input:find("^([^ #\r\n,%[{%]}]+)", sm.i)
         sm.i = sm.end_seq + 1
 
-        -- TODO: wrap in pcall
         if validate_datetime(sm, sm.match) then
             if sm.value_type == "datetime" or sm.value_type == "datetime-local" or
                 sm.value_type == "date-local" or sm.value_type == "time-local" then
@@ -1388,7 +1416,7 @@ local function encode_element(element: any, allow_multiline_strings: boolean): s
         return tostring(element)
 
     else
-        error("Unable to encode type '" .. type(element) .. "' into a TOML")
+        error("Unable to encode type '" .. type(element) .. "' into a TOML type")
     end
 end
 
@@ -1408,7 +1436,21 @@ local function encoder(input_table: any, encoded_string: {string}, depth: {strin
             end
             table.insert(encoded_string, escape_key(k))
             table.insert(encoded_string, " = ")
-            table.insert(encoded_string, encode_element(v, options.allow_multiline_strings))
+            local status, error_or_encoded_element = pcall(encode_element, v, options.allow_multiline_strings)
+            if not status then
+                local error_message = {"\n\nWhile encoding '"}
+                local _: integer
+                if #depth > 0 then
+                    error_message[#error_message + 1] = table.concat(depth, ".")
+                    error_message[#error_message + 1] = "."
+                end
+                error_message[#error_message + 1] = escape_key(k)
+                error_message[#error_message + 1] = "', received the following error message:\n\n"
+                _, _, error_or_encoded_element = error_or_encoded_element:find(".-:.-: (.*)")
+                error_message[#error_message + 1] = error_or_encoded_element
+                error(table.concat(error_message))
+            end
+            table.insert(encoded_string, error_or_encoded_element as string)
             table.insert(encoded_string, "\n")
         end
     end

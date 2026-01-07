@@ -11,6 +11,8 @@
 
 
 
+
+
 local tinytoml = {}
 
 
@@ -21,11 +23,12 @@ local tinytoml = {}
 
 
 local TOML_VERSION = "1.1.0"
-tinytoml._VERSION = "tinytoml 0.1.0"
+tinytoml._VERSION = "tinytoml 1.0.0"
 tinytoml._TOML_VERSION = TOML_VERSION
 tinytoml._DESCRIPTION = "a single-file pure Lua TOML parser"
 tinytoml._URL = "https://github.com/FourierTransformer/tinytoml"
 tinytoml._LICENSE = "MIT"
+
 
 
 
@@ -162,14 +165,28 @@ local chars = {
    LF = sbyte("\n"),
 }
 
-local function _error(sm, message, anchor)
-   local error_message = { "\n\nIn '", sm.filename, "', line ", sm.line_number, ":\n\n  " }
 
-   local _, end_line = sm.input:find(".-\n", sm.line_number_char_index)
-   error_message[#error_message + 1] = sm.line_number
-   error_message[#error_message + 1] = " | "
-   error_message[#error_message + 1] = sm.input:sub(sm.line_number_char_index, end_line)
-   error_message[#error_message + 1] = (end_line and "\n" or "\n\n")
+local function replace_control_chars(s)
+   return string.gsub(s, "[\000-\008\011-\031\127]", function(c)
+      return string.format("\\x%02x", string.byte(c))
+   end)
+end
+
+local function _error(sm, message, anchor)
+   local error_message = {}
+
+
+
+   if sm.filename then
+      error_message = { "\n\nIn '", sm.filename, "', line ", sm.line_number, ":\n\n  " }
+
+      local _, end_line = sm.input:find(".-\n", sm.line_number_char_index)
+      error_message[#error_message + 1] = sm.line_number
+      error_message[#error_message + 1] = " | "
+      error_message[#error_message + 1] = replace_control_chars(sm.input:sub(sm.line_number_char_index, end_line))
+      error_message[#error_message + 1] = (end_line and "\n" or "\n\n")
+   end
+
    error_message[#error_message + 1] = message
    error_message[#error_message + 1] = "\n"
 
@@ -222,7 +239,7 @@ local function validate_utf8(input, toml_sub)
             elseif byte == chars.CR and sbyte(input, i + 1) ~= chars.LF then return false, line_number, line_number_start, "TOML requires all '\\r' be followed by '\\n'"
             elseif byte == chars.LF then
                line_number = line_number + 1
-               line_number_start = i
+               line_number_start = i + 1
             elseif byte >= 11 and byte <= 31 and byte ~= 13 then return false, line_number, line_number_start, "TOML only allows some control characters, but they must be escaped in double quoted strings"
             elseif byte == 127 then return false, line_number, line_number_start, "TOML only allows some control characters, but they must be escaped in double quoted strings" end
          end
@@ -389,7 +406,7 @@ local function close_string(sm)
          if escape ~= nil then
             output[#output + 1] = escape
          else
-            sm._, sm._, sm.match = sm.input:find("^(%S*)", sm.i + 1)
+            sm._, sm._, sm.match = sm.input:find("(.-[^'\"])", sm.i + 1)
             _error(sm, "TOML only allows specific escape sequences. Invalid escape sequence found: '\\" .. sm.match .. "'", "string")
          end
 
@@ -765,6 +782,9 @@ end
 
 local function create_array(sm)
    sm.nested_arrays = sm.nested_arrays + 1
+   if sm.nested_arrays >= sm.options.max_nesting_depth then
+      _error(sm, "Maximum nesting depth has exceeded " .. sm.options.max_nesting_depth .. ". If this larger nesting depth is required, feel free to set 'max_nesting_depth' in the parser options.")
+   end
    sm.arrays[sm.nested_arrays] = {}
    sm.i = sm.i + 1
 end
@@ -968,6 +988,10 @@ end
 local function create_inline_table(sm)
    sm.nested_inline_tables = sm.nested_inline_tables + 1
 
+   if sm.nested_inline_tables >= sm.options.max_nesting_depth then
+      _error(sm, "Maximum nesting depth has exceeded " .. sm.options.max_nesting_depth .. ". If this larger nesting depth is required, feel free to set 'max_nesting_depth' in the parser options.")
+   end
+
    local backup = {
       previous_state = sm.mode,
       meta_table = sm.meta_table,
@@ -1123,9 +1147,21 @@ function tinytoml.parse(filename, options)
             sm.type_conversion[(key)] = value
          end
       end
+      options.max_filesize = options.max_filesize or 100000000
+      options.max_nesting_depth = options.max_nesting_depth or 1000
    else
+      options = { load_from_string = false, max_filesize = 100000000, max_nesting_depth = 1000 }
+   end
+
+   sm.options = options
+
+   if options.load_from_string == false then
       local file = io.open(filename, "r")
+      if not file then error("Unable to open file: '" .. filename .. "'") end
+      if file:seek("end") > options.max_filesize then error("Filesize is larger than 100MB. If this is intentional, please set the 'max_filesize' (in bytes) in options") end
+      file:seek("set")
       sm.input = file:read("*all")
+      file:close()
       sm.filename = filename
    end
 
@@ -1235,7 +1271,7 @@ local function escape_string(str, multiline, is_key)
 
 
 
-      local sm = { input = str, i = 1, filename = "encode process", line_number = 1, line_number_char_index = 1 }
+      local sm = { input = str, i = 1, line_number = 1, line_number_char_index = 1 }
       sm.type_conversion = {
          ["datetime"] = generic_type_conversion,
          ["datetime-local"] = generic_type_conversion,
@@ -1246,7 +1282,6 @@ local function escape_string(str, multiline, is_key)
 
       sm._, sm.end_seq, sm.match = sm.input:find("^([^ #\r\n,%[{%]}]+)", sm.i)
       sm.i = sm.end_seq + 1
-
 
       if validate_datetime(sm, sm.match) then
          if sm.value_type == "datetime" or sm.value_type == "datetime-local" or
@@ -1381,7 +1416,7 @@ local function encode_element(element, allow_multiline_strings)
       return tostring(element)
 
    else
-      error("Unable to encode type '" .. type(element) .. "' into a TOML")
+      error("Unable to encode type '" .. type(element) .. "' into a TOML type")
    end
 end
 
@@ -1401,7 +1436,21 @@ local function encoder(input_table, encoded_string, depth, options)
          end
          table.insert(encoded_string, escape_key(k))
          table.insert(encoded_string, " = ")
-         table.insert(encoded_string, encode_element(v, options.allow_multiline_strings))
+         local status, error_or_encoded_element = pcall(encode_element, v, options.allow_multiline_strings)
+         if not status then
+            local error_message = { "\n\nWhile encoding '" }
+            local _
+            if #depth > 0 then
+               error_message[#error_message + 1] = table.concat(depth, ".")
+               error_message[#error_message + 1] = "."
+            end
+            error_message[#error_message + 1] = escape_key(k)
+            error_message[#error_message + 1] = "', received the following error message:\n\n"
+            _, _, error_or_encoded_element = error_or_encoded_element:find(".-:.-: (.*)")
+            error_message[#error_message + 1] = error_or_encoded_element
+            error(table.concat(error_message))
+         end
+         table.insert(encoded_string, error_or_encoded_element)
          table.insert(encoded_string, "\n")
       end
    end
