@@ -167,9 +167,9 @@ local chars: {string:integer} = {
 
 
 local function replace_control_chars(s: string): string, integer
-  return string.gsub(s, "[\x00-\x08\x0b-\x1f\x7f]", function(c: string): string
-    return string.format("\\x%02x", string.byte(c))
-  end)
+    return string.gsub(s, "[%z\x01-\x08\x0b-\x1f\x7f]", function(c: string): string
+        return string.format("\\x%02x", string.byte(c))
+    end)
 end
 
 local function _error(sm: StateMachine, message: string, anchor?: TOML_anchors)
@@ -1266,7 +1266,7 @@ local short_sequences: {integer:string} = {
 local function escape_string(str: string, multiline: boolean, is_key: boolean): string
 
     -- possibly a date or a time!
-    if not is_key and str:find("%d%d") then
+    if not is_key and #str >= 5 and str:find("%d%d") then
         -- since Lua doesn't have any datetime format, going to check if the string is 
         -- a valid datetime and return accordingly
         
@@ -1291,43 +1291,27 @@ local function escape_string(str: string, multiline: boolean, is_key: boolean): 
         end
     end
 
-    local escaped_str = {'"'}
-
     local byte: integer
-    local i = 1
-    local _: integer
-    local end_seq: integer
-    local match: string
-    local found_multiline = false
-    while i <= #str do
-        byte = sbyte(str, i)
-        if multiline and str:find("^\r?\n", i) then
-            _, end_seq, match = str:find("^(\r?\n)", i)
-            found_multiline = true
-            i = end_seq
-            table.insert(escaped_str, match)
-        elseif short_sequences[byte] then
-            table.insert(escaped_str, short_sequences[byte])
-        elseif byte < 32 or byte == 127 then
-            table.insert(escaped_str, "\\x" .. string.format("%02x", byte))
-        else
-            -- should hopefully result in fewer string creations!
-            _, end_seq, match = str:find("^([a-zA-Z0-9-_]+)", i)
-            if end_seq then
-                i = end_seq
-                table.insert(escaped_str, match)
+    local found_newline = false
+    local final_string = string.gsub(str, '[%z\x01-\x1f\x7f\\"]', function(c: string): string
+        byte = sbyte(c)
+        if short_sequences[byte] then
+            if multiline and (byte == chars.CR or byte == chars.LF) then
+                found_newline = true
+                return c
             else
-                table.insert(escaped_str, str:sub(i,i))
+                return short_sequences[byte]
             end
+        else
+            return string.format("\\x%02x", byte)
         end
-        i = i + 1
+    end)
+    if found_newline then
+        final_string = '"""' .. final_string .. '"""'
+    else
+        final_string = '"' .. final_string .. '"'
     end
-    if found_multiline then
-        escaped_str[1] = '"""'
-    end
-    table.insert(escaped_str, escaped_str[1])
 
-    local final_string = table.concat(escaped_str)
     if not validate_utf8(final_string, true) then
         error("String is not valid UTF-8, cannot encode to TOML")
     end

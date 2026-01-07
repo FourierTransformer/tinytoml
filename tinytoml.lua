@@ -167,7 +167,7 @@ local chars = {
 
 
 local function replace_control_chars(s)
-   return string.gsub(s, "[\000-\008\011-\031\127]", function(c)
+   return string.gsub(s, "[%z\001-\008\011-\031\127]", function(c)
       return string.format("\\x%02x", string.byte(c))
    end)
 end
@@ -1266,7 +1266,7 @@ local short_sequences = {
 local function escape_string(str, multiline, is_key)
 
 
-   if not is_key and str:find("%d%d") then
+   if not is_key and #str >= 5 and str:find("%d%d") then
 
 
 
@@ -1291,43 +1291,27 @@ local function escape_string(str, multiline, is_key)
       end
    end
 
-   local escaped_str = { '"' }
-
    local byte
-   local i = 1
-   local _
-   local end_seq
-   local match
-   local found_multiline = false
-   while i <= #str do
-      byte = sbyte(str, i)
-      if multiline and str:find("^\r?\n", i) then
-         _, end_seq, match = str:find("^(\r?\n)", i)
-         found_multiline = true
-         i = end_seq
-         table.insert(escaped_str, match)
-      elseif short_sequences[byte] then
-         table.insert(escaped_str, short_sequences[byte])
-      elseif byte < 32 or byte == 127 then
-         table.insert(escaped_str, "\\x" .. string.format("%02x", byte))
-      else
-
-         _, end_seq, match = str:find("^([a-zA-Z0-9-_]+)", i)
-         if end_seq then
-            i = end_seq
-            table.insert(escaped_str, match)
+   local found_newline = false
+   local final_string = string.gsub(str, '[%z\001-\031\127\\"]', function(c)
+      byte = sbyte(c)
+      if short_sequences[byte] then
+         if multiline and (byte == chars.CR or byte == chars.LF) then
+            found_newline = true
+            return c
          else
-            table.insert(escaped_str, str:sub(i, i))
+            return short_sequences[byte]
          end
+      else
+         return string.format("\\x%02x", byte)
       end
-      i = i + 1
+   end)
+   if found_newline then
+      final_string = '"""' .. final_string .. '"""'
+   else
+      final_string = '"' .. final_string .. '"'
    end
-   if found_multiline then
-      escaped_str[1] = '"""'
-   end
-   table.insert(escaped_str, escaped_str[1])
 
-   local final_string = table.concat(escaped_str)
    if not validate_utf8(final_string, true) then
       error("String is not valid UTF-8, cannot encode to TOML")
    end
