@@ -11,6 +11,8 @@
 
 
 
+
+
 local tinytoml = {}
 
 
@@ -21,11 +23,36 @@ local tinytoml = {}
 
 
 local TOML_VERSION = "1.1.0"
-tinytoml._VERSION = "tinytoml 0.1.0"
+tinytoml._VERSION = "tinytoml 1.0.0"
 tinytoml._TOML_VERSION = TOML_VERSION
 tinytoml._DESCRIPTION = "a single-file pure Lua TOML parser"
 tinytoml._URL = "https://github.com/FourierTransformer/tinytoml"
 tinytoml._LICENSE = "MIT"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -138,30 +165,37 @@ local chars = {
    LF = sbyte("\n"),
 }
 
-local function _error(sm, message, anchor)
-   local error_message = { "In ", sm.filename, " line ", sm.line_number, ": ", message }
 
-   if anchor ~= nil then
-      error_message[#error_message + 1] = "\n\n\t See https://toml.io/en/v"
-      error_message[#error_message + 1] = TOML_VERSION
-      error_message[#error_message + 1] = "#"
-      error_message[#error_message + 1] = anchor
-      error_message[#error_message + 1] = " for more details\n"
-   end
-
-   error(table.concat(error_message))
+local function replace_control_chars(s)
+   return string.gsub(s, "[%z\001-\008\011-\031\127]", function(c)
+      return string.format("\\x%02x", string.byte(c))
+   end)
 end
 
+local function _error(sm, message, anchor)
+   local error_message = {}
 
-local function _nsmerror(message, input, byte, anchor)
-   local error_message = { "on byte ", byte, ": ", message, "\nnear: ", string.sub(input, byte - 25, byte + 25) }
+
+
+   if sm.filename then
+      error_message = { "\n\nIn '", sm.filename, "', line ", sm.line_number, ":\n\n  " }
+
+      local _, end_line = sm.input:find(".-\n", sm.line_number_char_index)
+      error_message[#error_message + 1] = sm.line_number
+      error_message[#error_message + 1] = " | "
+      error_message[#error_message + 1] = replace_control_chars(sm.input:sub(sm.line_number_char_index, end_line))
+      error_message[#error_message + 1] = (end_line and "\n" or "\n\n")
+   end
+
+   error_message[#error_message + 1] = message
+   error_message[#error_message + 1] = "\n"
 
    if anchor ~= nil then
-      error_message[#error_message + 1] = "\n\n\t See https://toml.io/en/v"
+      error_message[#error_message + 1] = "\nSee https://toml.io/en/v"
       error_message[#error_message + 1] = TOML_VERSION
       error_message[#error_message + 1] = "#"
       error_message[#error_message + 1] = anchor
-      error_message[#error_message + 1] = " for more details\n"
+      error_message[#error_message + 1] = " for more details"
    end
 
    error(table.concat(error_message))
@@ -193,7 +227,7 @@ local _utf8char = utf8 and utf8.char or function(cp)
 end
 
 local function validate_utf8(input, toml_sub)
-   local i, len = 1, #input
+   local i, len, line_number, line_number_start = 1, #input, 1, 1
    local byte, second, third, fourth = 0, 129, 129, 129
    toml_sub = toml_sub or false
    while i <= len do
@@ -201,10 +235,13 @@ local function validate_utf8(input, toml_sub)
 
       if byte <= 127 then
          if toml_sub then
-            if byte < 9 then _nsmerror("TOML only allows some control characters, but they must be escaped in double quoted strings", input, i, "string")
-            elseif byte == chars.CR and sbyte(input, i + 1) ~= chars.LF then _nsmerror("TOML requires all \\r be followed by \\n", input, i, "spec")
-            elseif byte >= 11 and byte <= 31 and byte ~= 13 then _nsmerror("TOML only allows some control characters, but they must be escaped in double quoted strings", input, i, "string")
-            elseif byte == 127 then _nsmerror("TOML only allows some control characters, but they must be escaped in double quoted strings", input, i, "string") end
+            if byte < 9 then return false, line_number, line_number_start, "TOML only allows some control characters, but they must be escaped in double quoted strings"
+            elseif byte == chars.CR and sbyte(input, i + 1) ~= chars.LF then return false, line_number, line_number_start, "TOML requires all '\\r' be followed by '\\n'"
+            elseif byte == chars.LF then
+               line_number = line_number + 1
+               line_number_start = i + 1
+            elseif byte >= 11 and byte <= 31 and byte ~= 13 then return false, line_number, line_number_start, "TOML only allows some control characters, but they must be escaped in double quoted strings"
+            elseif byte == 127 then return false, line_number, line_number_start, "TOML only allows some control characters, but they must be escaped in double quoted strings" end
          end
          i = i + 1
 
@@ -215,13 +252,13 @@ local function validate_utf8(input, toml_sub)
       elseif byte == 224 then
          second = sbyte(input, i + 1); third = sbyte(input, i + 2)
 
-         if second ~= nil and second >= 128 and second <= 159 then return false, i end
+         if second ~= nil and second >= 128 and second <= 159 then return false, line_number, line_number_start, "Invalid UTF-8 Sequence" end
          i = i + 3
 
       elseif byte == 237 then
          second = sbyte(input, i + 1); third = sbyte(input, i + 2)
 
-         if second ~= nil and second >= 160 and second <= 191 then return false, i end
+         if second ~= nil and second >= 160 and second <= 191 then return false, line_number, line_number_start, "Invalid UTF-8 Sequence" end
          i = i + 3
 
       elseif (byte >= 225 and byte <= 236) or byte == 238 or byte == 239 then
@@ -231,7 +268,7 @@ local function validate_utf8(input, toml_sub)
       elseif byte == 240 then
          second = sbyte(input, i + 1); third = sbyte(input, i + 2); fourth = sbyte(input, i + 3)
 
-         if second ~= nil and second >= 128 and second <= 143 then return false, i end
+         if second ~= nil and second >= 128 and second <= 143 then return false, line_number, line_number_start, "Invalid UTF-8 Sequence" end
          i = i + 4
 
       elseif byte == 241 or byte == 242 or byte == 243 then
@@ -241,21 +278,21 @@ local function validate_utf8(input, toml_sub)
       elseif byte == 244 then
          second = sbyte(input, i + 1); third = sbyte(input, i + 2); fourth = sbyte(input, i + 3)
 
-         if second ~= nil and second >= 160 and second <= 191 then return false, i end
+         if second ~= nil and second >= 160 and second <= 191 then return false, line_number, line_number_start, "Invalid UTF-8 Sequence" end
          i = i + 4
 
       else
 
-         return false, i
+         return false, line_number, line_number_start, "Invalid UTF-8 Sequence"
       end
 
 
-      if second == nil or second < 128 or second > 191 then return false, i end
-      if third == nil or third < 128 or third > 191 then return false, i end
-      if fourth == nil or fourth < 128 or fourth > 191 then return false, i end
+      if second == nil or second < 128 or second > 191 then return false, line_number, line_number_start, "Invalid UTF-8 Sequence" end
+      if third == nil or third < 128 or third > 191 then return false, line_number, line_number_start, "Invalid UTF-8 Sequence" end
+      if fourth == nil or fourth < 128 or fourth > 191 then return false, line_number, line_number_start, "Invalid UTF-8 Sequence" end
 
    end
-   return true, i
+   return true
 end
 
 local function find_newline(sm)
@@ -266,6 +303,7 @@ local function find_newline(sm)
    end
    sm.line_number = sm.line_number + 1
    sm.i = sm.end_seq + 1
+   sm.line_number_char_index = sm.i
 end
 
 local escape_sequences = {
@@ -308,7 +346,7 @@ local function handle_backslash_escape(sm)
    if sm.match then
       local codepoint_to_insert = _utf8char(tonumber(sm.ext, 16))
       if not validate_utf8(codepoint_to_insert) then
-         _error(sm, "Escaped UTF-8 sequence not valid UTF-8 character: \\" .. sm.match .. sm.ext, "string")
+         _error(sm, "Escaped UTF-8 sequence not valid UTF-8 character: '\\" .. sm.match .. sm.ext .. "'", "string")
       end
       sm.i = sm.end_seq
       return codepoint_to_insert, false
@@ -322,7 +360,7 @@ local function handle_backslash_escape(sm)
    if sm.match then
       local codepoint_to_insert = _utf8char(tonumber(sm.ext, 16))
       if not validate_utf8(codepoint_to_insert) then
-         _error(sm, "Escaped UTF-8 sequence not valid UTF-8 character: \\" .. sm.match .. sm.ext, "string")
+         _error(sm, "Escaped UTF-8 sequence not valid UTF-8 character: '\\" .. sm.match .. sm.ext .. "'", "string")
       end
       sm.i = sm.end_seq
       return codepoint_to_insert, false
@@ -368,8 +406,8 @@ local function close_string(sm)
          if escape ~= nil then
             output[#output + 1] = escape
          else
-            sm._, sm._, sm.match = sm.input:find("^(%S*)", sm.i + 1)
-            _error(sm, "TOML only allows specific escape sequences. Invalid escape sequence found: \\" .. sm.match, "string")
+            sm._, sm._, sm.match = sm.input:find("(.-[^'\"])", sm.i + 1)
+            _error(sm, "TOML only allows specific escape sequences. Invalid escape sequence found: '\\" .. sm.match .. "'", "string")
          end
 
          start_field = sm.i + 1
@@ -402,7 +440,7 @@ local function close_string(sm)
             found_closing_quote = true
             break
          elseif sm.byte == chars.CR or sm.byte == chars.LF then
-            _error(sm, "Newlines are not allowed in single quoted basic strings. Use multi-line (triple quoted) strings instead.", "string")
+            _error(sm, "String does not appear to be closed. Use multi-line (triple quoted) strings if non-escaped newlines are desired.", "string")
          end
       end
    end
@@ -467,7 +505,7 @@ local function close_literal_string(sm)
             end_field = sm.i - 1
             break
          elseif sm.byte == chars.CR or sm.byte == chars.LF then
-            _error(sm, "Newlines are not allowed in single quoted literal strings. Use multi-line (triple quoted) strings instead.", "string")
+            _error(sm, "String does not appear to be closed. Use multi-line (triple quoted) strings if non-escaped newlines are desired.", "string")
          end
       end
    end
@@ -493,16 +531,16 @@ local function close_bare_string(sm)
       sm.value = sm.match
       sm.value_type = "string"
    else
-      _error(sm, "Bare keys can only contain 'a-zA-Z0-9-_'. Invalid bare key found : " .. sm.input:sub(sm.i, sm.i + 50))
+      _error(sm, "Bare keys can only contain 'a-zA-Z0-9-_'. Invalid bare key found: '" .. sm.input:sub(sm.input:find("[^ #\r\n,]+", sm.i)) .. "'", "keys")
    end
 end
 
 
 local function remove_underscores_number(sm, number, anchor)
    if number:find("_") then
-      if number:find("__") then _error(sm, "Numbers cannot have consecutive underscores. Found " .. anchor .. ": " .. number, anchor) end
-      if number:find("^_") or number:find("_$") then _error(sm, "Underscores are not allowed at beginning or end of a number. Found " .. anchor .. " : " .. number, anchor) end
-      if number:find("%D_%d") or number:find("%d_%D") then _error(sm, "Underscores must have digits on either side. Found " .. anchor .. " : " .. number, anchor) end
+      if number:find("__") then _error(sm, "Numbers cannot have consecutive underscores. Found " .. anchor .. ": '" .. number .. "'", anchor) end
+      if number:find("^_") or number:find("_$") then _error(sm, "Underscores are not allowed at beginning or end of a number. Found " .. anchor .. ": '" .. number .. "'", anchor) end
+      if number:find("%D_%d") or number:find("%d_%D") then _error(sm, "Underscores must have digits on either side. Found " .. anchor .. ": '" .. number .. "'", anchor) end
       number = number:gsub("_", "")
    end
    return number
@@ -517,7 +555,7 @@ local integer_match = {
 local function validate_integer(sm, value)
    sm._, sm._, sm.match = value:find("^([-+]?[%d_]+)$")
    if sm.match then
-      if sm.match:find("^[-+]?0[%d_]") then _error(sm, "Integers can't start with a leading 0. Found integer: " .. sm.match, "integer") end
+      if sm.match:find("^[-+]?0[%d_]") then _error(sm, "Integers can't start with a leading 0. Found integer: '" .. sm.match .. "'", "integer") end
       sm.match = remove_underscores_number(sm, sm.match, "integer")
       sm.value = _tointeger(sm.match)
       sm.value_type = "integer"
@@ -539,8 +577,8 @@ end
 local function validate_float(sm, value)
    sm._, sm._, sm.match, sm.ext = value:find("^([-+]?[%d_]+%.[%d_]+)(.*)$")
    if sm.match then
-      if sm.match:find("%._") or sm.match:find("_%.") then _error(sm, "Underscores in floats must have a number on either side. Found float: " .. sm.match .. sm.ext, "float") end
-      if sm.match:find("^[-+]?0[%d_]") then _error(sm, "Floats can't start with a leading 0. Found float: " .. sm.match .. sm.ext, "float") end
+      if sm.match:find("%._") or sm.match:find("_%.") then _error(sm, "Underscores in floats must have a number on either side. Found float: '" .. sm.match .. sm.ext .. "'", "float") end
+      if sm.match:find("^[-+]?0[%d_]") then _error(sm, "Floats can't start with a leading 0. Found float: '" .. sm.match .. sm.ext .. "'", "float") end
       sm.match = remove_underscores_number(sm, sm.match, "float")
       if sm.ext ~= "" then
          if sm.ext:find("^[eE][-+]?[%d_]+$") then
@@ -558,7 +596,7 @@ local function validate_float(sm, value)
 
    sm._, sm._, sm.match = value:find("^([-+]?[%d_]+[eE][-+]?[%d_]+)$")
    if sm.match then
-      if sm.match:find("_[eE]") or sm.match:find("[eE]_") then _error(sm, "Underscores in floats cannot be before or after the e. Found float: " .. sm.match .. sm.ext, "float") end
+      if sm.match:find("_[eE]") or sm.match:find("[eE]_") then _error(sm, "Underscores in floats cannot be before or after the e. Found float: '" .. sm.match .. sm.ext .. "'", "float") end
       sm.match = remove_underscores_number(sm, sm.match, "float")
       sm.value = tonumber(sm.match)
       sm.value_type = "float"
@@ -567,18 +605,39 @@ local function validate_float(sm, value)
 end
 
 local max_days_in_month = { 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }
+local function validate_seconds(sm, sec, anchor)
+   if sec > 60 then _error(sm, "Seconds must be less than 61. Found second: " .. sec .. " in: '" .. sm.match .. "'", anchor) end
+end
+
+local function validate_hours_minutes(sm, hour, min, anchor)
+   if hour > 23 then _error(sm, "Hours must be less than 24. Found hour: " .. hour .. " in: '" .. sm.match .. "'", anchor) end
+   if min > 59 then _error(sm, "Minutes must be less than 60. Found minute: " .. min .. " in: '" .. sm.match .. "'", anchor) end
+end
+
+local function validate_month_date(sm, year, month, day, anchor)
+   if month == 0 or month > 12 then _error(sm, "Month must be between 01-12. Found month: " .. month .. " in: '" .. sm.match .. "'", anchor) end
+   if day == 0 or day > max_days_in_month[month] then
+      local months = { "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" }
+      _error(sm, "Too many days in the month. Found " .. day .. " days in " .. months[month] .. ", which only has " .. max_days_in_month[month] .. " days in: '" .. sm.match .. "'", anchor)
+   end
+   if month == 2 then
+      local leap_year = (year % 4 == 0) and not (year % 100 == 0) or (year % 400 == 0)
+      if leap_year == false then
+         if day > 28 then _error(sm, "Too many days in month. Found " .. day .. " days in February, which only has 28 days if it's not a leap year in: '" .. sm.match .. "'", anchor) end
+      end
+   end
+end
 
 local function validate_datetime(sm, value)
    local hour, min, sec
    sm._, sm._, sm.match, hour, min, sm.ext = value:find("^((%d%d):(%d%d))(.*)$")
    if sm.match then
-      if _tointeger(hour) > 23 then _error(sm, "Hours must be less than 24. Found hour: " .. hour .. "in: " .. sm.match, "local-time") end
-      if _tointeger(min) > 59 then _error(sm, "Minutes must be less than 60. Found minute: " .. min .. "in: " .. sm.match, "local-time") end
+      validate_hours_minutes(sm, _tointeger(hour), _tointeger(min), "local-time")
 
       if sm.ext ~= "" then
          sm._, sm._, sec = sm.ext:find("^:(%d%d)$")
          if sec then
-            if _tointeger(sec) > 60 then _error(sm, "Seconds must be less than 61. Found second: " .. sec .. "in: " .. sm.match, "local-time") end
+            validate_seconds(sm, _tointeger(sec), "local-time")
             sm.value_type = "time-local"
             sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
             return true
@@ -586,7 +645,7 @@ local function validate_datetime(sm, value)
 
          sm._, sm._, sec = sm.ext:find("^:(%d%d)%.%d+$")
          if sec then
-            if _tointeger(sec) > 60 then _error(sm, "Seconds must be less than 61. Found second: " .. sec .. "in: " .. sm.match, "local-time") end
+            validate_seconds(sm, _tointeger(sec), "local-time")
             sm.value_type = "time-local"
             sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
             return true
@@ -603,14 +662,7 @@ local function validate_datetime(sm, value)
    sm._, sm._, sm.match, year_s, month_s, day_s = value:find("^((%d%d%d%d)%-(%d%d)%-(%d%d))$")
    if sm.match then
       year, month, day = _tointeger(year_s), _tointeger(month_s), _tointeger(day_s)
-      if month == 0 or month > 12 then _error(sm, "Month must be between 01-12. Found month: " .. month .. "in: " .. sm.match, "local-date") end
-      if day == 0 or day > max_days_in_month[month] then _error(sm, "Too many days in the month. Found " .. day .. " days in month " .. month .. ", which only has " .. max_days_in_month[month] .. " days in: " .. sm.match, "local-date") end
-      if month == 2 then
-         local leap_year = (year % 4 == 0) and not (year % 100 == 0) or (year % 400 == 0)
-         if leap_year == false then
-            if day > 28 then _error(sm, "Too many days in month. Found " .. day .. " days in month 02, which only has 28 days if it's not a leap year in: " .. sm.match, "local-date") end
-         end
-      end
+      validate_month_date(sm, year, month, day, "local-date")
       sm.value_type = "date-local"
       sm.value = sm.type_conversion[sm.value_type](sm.match)
 
@@ -634,23 +686,15 @@ local function validate_datetime(sm, value)
    value:find("^((%d%d%d%d)%-(%d%d)%-(%d%d)[Tt ](%d%d):(%d%d))(.*)$")
 
    if sm.match then
-      if _tointeger(hour) > 23 then _error(sm, "Hours must be less than 24. Found hour: " .. hour .. "in: " .. sm.match, "") end
-      if _tointeger(min) > 59 then _error(sm, "Minutes must be less than 60. Found minute: " .. min .. "in: " .. sm.match) end
+      validate_hours_minutes(sm, _tointeger(hour), _tointeger(min), "local-time")
       year, month, day = _tointeger(year_s), _tointeger(month_s), _tointeger(day_s)
-      if month == 0 or month > 12 then _error(sm, "Month must be between 01-12. Found month: " .. month .. "in: " .. sm.match) end
-      if day == 0 or day > max_days_in_month[month] then _error(sm, "Too many days in the month. Found " .. day .. " days in month " .. month .. ", which only has " .. max_days_in_month[month] .. " days in: " .. sm.match, "local-datetime") end
-      if month == 2 then
-         local leap_year = (year % 4 == 0) and not (year % 100 == 0) or (year % 400 == 0)
-         if leap_year == false then
-            if day > 28 then _error(sm, "Too many days in month. Found " .. day .. " days in month 02, which only has 28 day if it's not a leap year in: " .. sm.match, "local-datetime") end
-         end
-      end
+      validate_month_date(sm, year, month, day, "local-date-time")
 
 
       local temp_ext
       sm._, sm._, sec, temp_ext = sm.ext:find("^:(%d%d)(.*)$")
       if sec then
-         if _tointeger(sec) > 60 then _error(sm, "Seconds must be less than 61. Found second: " .. sec .. "in: " .. sm.match) end
+         validate_seconds(sm, _tointeger(sec), "local-time")
          sm.match = sm.match .. ":" .. sec
          sm.ext = temp_ext
       else
@@ -659,32 +703,30 @@ local function validate_datetime(sm, value)
 
 
       if sm.ext ~= "" then
-
+         sm.match = sm.match .. sm.ext
          if sm.ext:find("^%.%d+$") then
             sm.value_type = "datetime-local"
-            sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
+            sm.value = sm.type_conversion[sm.value_type](sm.match)
             return true
          elseif sm.ext:find("^%.%d+Z$") then
             sm.value_type = "datetime"
-            sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
+            sm.value = sm.type_conversion[sm.value_type](sm.match)
             return true
          elseif sm.ext:find("^%.%d+[+-]%d%d:%d%d$") then
             sm._, sm.end_seq, hour, min = sm.ext:find("^%.%d+[+-](%d%d):(%d%d)$")
-            if _tointeger(hour) > 23 then _error(sm, "Hours must be less than 24. Found hour: " .. hour .. "in: " .. sm.match, "offset-date-time") end
-            if _tointeger(min) > 59 then _error(sm, "Minutes must be less than 60. Found minute: " .. min .. "in: " .. sm.match, "offset-date-time") end
+            validate_hours_minutes(sm, _tointeger(hour), _tointeger(min), "offset-date-time")
             sm.value_type = "datetime"
-            sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
+            sm.value = sm.type_conversion[sm.value_type](sm.match)
             return true
          elseif sm.ext:find("^[Zz]$") then
             sm.value_type = "datetime"
-            sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
+            sm.value = sm.type_conversion[sm.value_type](sm.match)
             return true
          elseif sm.ext:find("^[+-]%d%d:%d%d$") then
             sm._, sm.end_seq, hour, min = sm.ext:find("^[+-](%d%d):(%d%d)$")
-            if _tointeger(hour) > 23 then _error(sm, "Hours must be less than 24. Found hour: " .. hour .. "in: " .. sm.match, "offset-date-time") end
-            if _tointeger(min) > 59 then _error(sm, "Minutes must be less than 60. Found minute: " .. min .. "in: " .. sm.match, "offset-date-time") end
+            validate_hours_minutes(sm, _tointeger(hour), _tointeger(min), "offset-date-time")
             sm.value_type = "datetime"
-            sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
+            sm.value = sm.type_conversion[sm.value_type](sm.match)
             return true
          end
       else
@@ -715,10 +757,10 @@ local exact_matches = {
 local function close_other_value(sm)
    local successful_type
    sm._, sm.end_seq, sm.match = sm.input:find("^([^ #\r\n,%[{%]}]+)", sm.i)
-   sm.i = sm.end_seq + 1
    if sm.match == nil then
-      _error(sm, "Can't find value to close")
+      _error(sm, "Key has been assigned, but value doesn't seem to exist", "keyvalue-pair")
    end
+   sm.i = sm.end_seq + 1
 
    local value = sm.match
    local exact_value = exact_matches[value]
@@ -735,11 +777,14 @@ local function close_other_value(sm)
       end
    end
 
-   _error(sm, "Unable to determine type of value for: " .. value)
+   _error(sm, "Unable to determine type of value for: '" .. value .. "'", "keyvalue-pair")
 end
 
 local function create_array(sm)
    sm.nested_arrays = sm.nested_arrays + 1
+   if sm.nested_arrays >= sm.options.max_nesting_depth then
+      _error(sm, "Maximum nesting depth has exceeded " .. sm.options.max_nesting_depth .. ". If this larger nesting depth is required, feel free to set 'max_nesting_depth' in the parser options.")
+   end
    sm.arrays[sm.nested_arrays] = {}
    sm.i = sm.i + 1
 end
@@ -818,7 +863,7 @@ local function close_table(sm)
          meta_out_table = meta_out_table[sm.tables[i]]
       else
          if (meta_out_table[sm.tables[i]]).type == "value" then
-            _error(sm, "Cannot override value with table definition")
+            _error(sm, "Cannot override previously definied value '" .. sm.tables[i] .. "' with new table definition: '" .. table.concat(sm.tables, ".") .. "'")
          end
 
          local next_table = out_table[sm.tables[i]][#out_table[sm.tables[i]]]
@@ -840,13 +885,13 @@ local function close_table(sm)
          out_table[final_table] = {}
          meta_out_table[final_table] = { type = "dictionary" }
       elseif (meta_out_table[final_table]).type == "value" then
-         _error(sm, "Cannot override existing value with table")
+         _error(sm, "Cannot override existing value '" .. sm.value .. "' with new table")
       elseif (meta_out_table[final_table]).type == "dictionary" then
-         _error(sm, "Cannot override existing table")
+         _error(sm, "Cannot override existing table '" .. sm.value .. "' with new table")
       elseif (meta_out_table[final_table]).type == "array" then
-         _error(sm, "Cannot override existing array")
+         _error(sm, "Cannot override existing array '" .. sm.value .. "' with new table")
       elseif (meta_out_table[final_table]).type == "value-dictionary" then
-         _error(sm, "Cannot override value with table definition")
+         _error(sm, "Cannot override existing value '" .. sm.value .. "' with new table")
       end
       (meta_out_table[final_table]).type = "dictionary"
       sm.current_table = out_table[final_table]
@@ -857,13 +902,13 @@ local function close_table(sm)
          out_table[final_table] = {}
          meta_out_table[final_table] = { type = "array" }
       elseif (meta_out_table[final_table]).type == "value" then
-         _error(sm, "Cannot override existing value with table")
+         _error(sm, "Cannot override existing value '" .. sm.value .. "' with new table")
       elseif (meta_out_table[final_table]).type == "dictionary" then
-         _error(sm, "Cannot override existing table")
+         _error(sm, "Cannot override existing table '" .. sm.value .. "' with new table")
       elseif (meta_out_table[final_table]).type == "auto-dictionary" then
-         _error(sm, "Cannot override existing table")
+         _error(sm, "Cannot override existing table '" .. sm.value .. "' with new table")
       elseif (meta_out_table[final_table]).type == "value-dictionary" then
-         _error(sm, "Cannot override value with table definition")
+         _error(sm, "Cannot override existing value '" .. sm.value .. "' with new table")
       end
       table.insert(out_table[final_table], {})
       table.insert(meta_out_table[final_table], { type = "dictionary" })
@@ -877,7 +922,7 @@ local function assign_key(sm)
    if sm.multiline_string == false then
       sm.keys[#sm.keys + 1] = sm.value
    else
-      _error(sm, "Keys must be a non multi-line string. Found key: " .. tostring(sm.value), "key")
+      _error(sm, "Cannot have multi-line string as keys. Found key: '" .. tostring(sm.value) .. "'", "keys")
    end
 
 
@@ -903,11 +948,11 @@ local function assign_value(sm)
          out_table[sm.keys[i]] = {}
          meta_out_table[sm.keys[i]] = { type = "value-dictionary" }
       elseif (meta_out_table[sm.keys[i]]).type == "value" then
-         _error(sm, "Cannot key append over an exsiting value")
+         _error(sm, "Cannot override existing value '" .. sm.keys[i] .. "' in '" .. table.concat(sm.keys, ".") .. "'")
       elseif (meta_out_table[sm.keys[i]]).type == "dictionary" then
-         _error(sm, "Cannot override existing table")
+         _error(sm, "Cannot override existing table '" .. sm.keys[i] .. "' in '" .. table.concat(sm.keys, ".") .. "'")
       elseif (meta_out_table[sm.keys[i]]).type == "array" then
-         _error(sm, "Cannot override existing array")
+         _error(sm, "Cannot override existing array '" .. sm.keys[i] .. "' in '" .. table.concat(sm.keys, ".") .. "'")
       end
       out_table = out_table[sm.keys[i]]
       meta_out_table = meta_out_table[sm.keys[i]]
@@ -917,7 +962,7 @@ local function assign_value(sm)
    local last_table = sm.keys[#sm.keys]
 
    if out_table[last_table] ~= nil then
-      _error(sm, "Cannot override existing value")
+      _error(sm, "Cannot override previously defined key '" .. sm.keys[#sm.keys] .. "'")
    end
 
    out_table[last_table] = output
@@ -930,18 +975,22 @@ end
 local function error_invalid_state(sm)
    local error_message = "Incorrectly formatted TOML. "
    local found = sm.input:sub(sm.i, sm.i); if found == "\r" or found == "\n" then found = "newline character" end
-   if sm.mode == "start_of_line" then error_message = error_message .. "At start of line, could not find a key. Found ="
-   elseif sm.mode == "inside_table" then error_message = error_message .. "In a table definition, expected a '.' or ']'. Found: " .. found
-   elseif sm.mode == "inside_key" then error_message = error_message .. "In a key defintion, expected a '.' or '='. Found: " .. found
+   if sm.mode == "start_of_line" then error_message = error_message .. "At start of line, could not find a key. Found '='"
+   elseif sm.mode == "inside_table" then error_message = error_message .. "In a table definition, expected a '.' or ']'. Found: '" .. found .. "'"
+   elseif sm.mode == "inside_key" then error_message = error_message .. "In a key defintion, expected a '.' or '='. Found: '" .. found .. "'"
    elseif sm.mode == "value" then error_message = error_message .. "Unspecified value, key was specified, but no value provided."
    elseif sm.mode == "inside_array" then error_message = error_message .. "Inside an array, expected a ']', '}' (if inside inline table), ',', newline, or comment. Found: " .. found
-   elseif sm.mode == "wait_for_newline" then error_message = error_message .. "Just assigned value or created table. Expected newline or comment."
+   elseif sm.mode == "wait_for_newline" then error_message = error_message .. "Just assigned value or created table. Expected newline or comment before continuing."
    end
    _error(sm, error_message)
 end
 
 local function create_inline_table(sm)
    sm.nested_inline_tables = sm.nested_inline_tables + 1
+
+   if sm.nested_inline_tables >= sm.options.max_nesting_depth then
+      _error(sm, "Maximum nesting depth has exceeded " .. sm.options.max_nesting_depth .. ". If this larger nesting depth is required, feel free to set 'max_nesting_depth' in the parser options.")
+   end
 
    local backup = {
       previous_state = sm.mode,
@@ -1098,9 +1147,21 @@ function tinytoml.parse(filename, options)
             sm.type_conversion[(key)] = value
          end
       end
+      options.max_filesize = options.max_filesize or 100000000
+      options.max_nesting_depth = options.max_nesting_depth or 1000
    else
+      options = { load_from_string = false, max_filesize = 100000000, max_nesting_depth = 1000 }
+   end
+
+   sm.options = options
+
+   if options.load_from_string == false then
       local file = io.open(filename, "r")
+      if not file then error("Unable to open file: '" .. filename .. "'") end
+      if file:seek("end") > options.max_filesize then error("Filesize is larger than 100MB. If this is intentional, please set the 'max_filesize' (in bytes) in options") end
+      file:seek("set")
       sm.input = file:read("*all")
+      file:close()
       sm.filename = filename
    end
 
@@ -1110,6 +1171,7 @@ function tinytoml.parse(filename, options)
    sm.output = {}
    sm.meta_table = {}
    sm.line_number = 1
+   sm.line_number_char_index = 1
    sm.nested_arrays = 0
    sm.inline_table_backup = {}
    sm.nested_inline_tables = 0
@@ -1121,9 +1183,11 @@ function tinytoml.parse(filename, options)
 
    if sm.input_length == 0 then return {} end
 
-   local valid, char = validate_utf8(sm.input, true)
+   local valid, line_number, line_number_start, message = validate_utf8(sm.input, true)
    if not valid then
-      _nsmerror("Invalid UTF-8 character detected in input", sm.input, char, "spec")
+      sm.line_number = line_number
+      sm.line_number_char_index = line_number_start
+      _error(sm, message, "preliminaries")
    end
 
    sm.mode = "start_of_line"
@@ -1165,10 +1229,10 @@ function tinytoml.parse(filename, options)
       _error(sm, "Unable to find closing bracket of array", "array")
    end
    if sm.mode == "key" then
-      _error(sm, "Incorrect formatting for key", "key")
+      _error(sm, "Incorrect formatting for key", "keys")
    end
    if sm.mode == "value" then
-      _error(sm, "The key never had a value assigned", "keyvalue-pair")
+      _error(sm, "Key has been assigned, but value doesn't seem to exist", "keyvalue-pair")
    end
    if sm.nested_inline_tables ~= 0 then
       _error(sm, "Unable to find closing bracket of inline table", "inline-table")
@@ -1202,26 +1266,22 @@ local short_sequences = {
 local function escape_string(str, multiline, is_key)
 
 
-   if not is_key and str:find("%d%d") then
+   if not is_key and #str >= 5 and str:find("%d%d") then
 
 
 
 
-      local sm = {}
+      local sm = { input = str, i = 1, line_number = 1, line_number_char_index = 1 }
       sm.type_conversion = {
          ["datetime"] = generic_type_conversion,
          ["datetime-local"] = generic_type_conversion,
          ["date-local"] = generic_type_conversion,
          ["time-local"] = generic_type_conversion,
       }
-      sm.input = str
-      sm.i = 1
-      sm.filename = "encode process"
 
 
       sm._, sm.end_seq, sm.match = sm.input:find("^([^ #\r\n,%[{%]}]+)", sm.i)
       sm.i = sm.end_seq + 1
-
 
       if validate_datetime(sm, sm.match) then
          if sm.value_type == "datetime" or sm.value_type == "datetime-local" or
@@ -1231,43 +1291,27 @@ local function escape_string(str, multiline, is_key)
       end
    end
 
-   local escaped_str = { '"' }
-
    local byte
-   local i = 1
-   local _
-   local end_seq
-   local match
-   local found_multiline = false
-   while i <= #str do
-      byte = sbyte(str, i)
-      if multiline and str:find("^\r?\n", i) then
-         _, end_seq, match = str:find("^(\r?\n)", i)
-         found_multiline = true
-         i = end_seq
-         table.insert(escaped_str, match)
-      elseif short_sequences[byte] then
-         table.insert(escaped_str, short_sequences[byte])
-      elseif byte < 32 or byte == 127 then
-         table.insert(escaped_str, "\\x" .. string.format("%02x", byte))
-      else
-
-         _, end_seq, match = str:find("^([a-zA-Z0-9-_]+)", i)
-         if end_seq then
-            i = end_seq
-            table.insert(escaped_str, match)
+   local found_newline = false
+   local final_string = string.gsub(str, '[%z\001-\031\127\\"]', function(c)
+      byte = sbyte(c)
+      if short_sequences[byte] then
+         if multiline and (byte == chars.CR or byte == chars.LF) then
+            found_newline = true
+            return c
          else
-            table.insert(escaped_str, str:sub(i, i))
+            return short_sequences[byte]
          end
+      else
+         return string.format("\\x%02x", byte)
       end
-      i = i + 1
+   end)
+   if found_newline then
+      final_string = '"""' .. final_string .. '"""'
+   else
+      final_string = '"' .. final_string .. '"'
    end
-   if found_multiline then
-      escaped_str[1] = '"""'
-   end
-   table.insert(escaped_str, escaped_str[1])
 
-   local final_string = table.concat(escaped_str)
    if not validate_utf8(final_string, true) then
       error("String is not valid UTF-8, cannot encode to TOML")
    end
@@ -1356,7 +1400,7 @@ local function encode_element(element, allow_multiline_strings)
       return tostring(element)
 
    else
-      error("Unable to encode type '" .. type(element) .. "' into a TOML")
+      error("Unable to encode type '" .. type(element) .. "' into a TOML type")
    end
 end
 
@@ -1376,7 +1420,21 @@ local function encoder(input_table, encoded_string, depth, options)
          end
          table.insert(encoded_string, escape_key(k))
          table.insert(encoded_string, " = ")
-         table.insert(encoded_string, encode_element(v, options.allow_multiline_strings))
+         local status, error_or_encoded_element = pcall(encode_element, v, options.allow_multiline_strings)
+         if not status then
+            local error_message = { "\n\nWhile encoding '" }
+            local _
+            if #depth > 0 then
+               error_message[#error_message + 1] = table.concat(depth, ".")
+               error_message[#error_message + 1] = "."
+            end
+            error_message[#error_message + 1] = escape_key(k)
+            error_message[#error_message + 1] = "', received the following error message:\n\n"
+            _, _, error_or_encoded_element = error_or_encoded_element:find(".-:.-: (.*)")
+            error_message[#error_message + 1] = error_or_encoded_element
+            error(table.concat(error_message))
+         end
+         table.insert(encoded_string, error_or_encoded_element)
          table.insert(encoded_string, "\n")
       end
    end
