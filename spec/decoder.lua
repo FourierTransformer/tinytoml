@@ -49,14 +49,23 @@ local function add_toml_test_tag(table_to_clear)
       end
 
    else
-      for k, v in pairs(table_to_clear) do
-         table_to_clear[k] = add_toml_test_tag(v)
+      if not (table_to_clear.type and table_to_clear.value) then
+         for k, v in pairs(table_to_clear) do
+            table_to_clear[k] = add_toml_test_tag(v)
+         end
       end
    end
 
    return table_to_clear
 end
 
-local output = tinytoml.parse(io.read("*a"), { load_from_string = true, encode_date_and_times_as = "table" })
+local type_conversion = {
+  ["datetime"] = function(raw_string) return {type="datetime", value=raw_string} end,
+  ["datetime-local"] = function(raw_string) return {type="datetime-local", value=raw_string} end,
+  ["date-local"] = function(raw_string) return {type="date-local", value=raw_string} end,
+  ["time-local"] = function(raw_string) return {type="time-local", value=raw_string} end,
+}
+
+local output = tinytoml.parse(io.read("*a"), { load_from_string = true, encode_date_and_times_as = "string", type_conversion = type_conversion })
 add_toml_test_tag(output)
 print(cjson.encode(output))
