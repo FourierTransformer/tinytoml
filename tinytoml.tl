@@ -5,9 +5,15 @@ local enum TomlConversionType
     "time-local"
 end
 
+local enum DateTimeEncode
+    "string"
+    "table"
+end
+
 local record TinyTomlOptions
     load_from_string: boolean
-    type_conversion: {TomlConversionType:function<T>(raw_value: string):T}
+    type_conversion: {TomlConversionType:function<T>(raw_value: string | table):T}
+    encode_date_and_times_as: DateTimeEncode
     max_filesize: integer
     max_nesting_depth: integer
 end
@@ -625,31 +631,69 @@ local function validate_month_date(sm: StateMachine, year: integer, month: integ
     end
 end
 
+local function assign_time_local(sm: StateMachine, match: string, hour: integer, min: integer, sec: integer, msec: integer)
+    sm.value_type = "time-local"
+    if sm.options.encode_date_and_times_as == "string" then
+        sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType](match)
+    else
+        sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType]({hour=hour, min=min, sec=sec, msec=msec})
+    end
+end
+
+local function assign_date_local(sm: StateMachine, match: string, year: integer, month: integer, day: integer)
+    sm.value_type = "date-local"
+    if sm.options.encode_date_and_times_as == "string" then
+        sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType](match)
+    else
+        sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType]({year=year, month=month, day=day})
+    end
+end
+
+local function assign_datetime_local(sm: StateMachine, match: string, year: integer, month: integer, day: integer, hour: integer, min: integer, sec: integer, msec?: integer)
+    sm.value_type = "datetime-local"
+    if sm.options.encode_date_and_times_as == "string" then
+        sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType](match)
+    else
+        sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType]({year=year, month=month, day=day, hour=hour, min=min, sec=sec, msec=msec or 0})
+    end
+end
+
+local function assign_datetime(sm: StateMachine, match: string, year: integer, month: integer, day: integer, hour: integer, min: integer, sec: integer, msec?: integer)
+    sm.value_type = "datetime"
+    if sm.options.encode_date_and_times_as == "string" then
+        sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType](match)
+    else
+        sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType]({year=year, month=month, day=day, hour=hour, min=min, sec=sec, msec=msec or 0})
+    end
+end
+
 local function validate_datetime(sm: StateMachine, value: string): boolean
-    local hour, min, sec: string, string, string
-    sm._, sm._, sm.match, hour, min, sm.ext = value:find("^((%d%d):(%d%d))(.*)$") as (integer, integer, string, string, string, string)
+    local hour_s, min_s, sec_s, msec_s: string, string, string, string
+    local hour, min, sec: integer, integer, integer
+    sm._, sm._, sm.match, hour_s, min_s, sm.ext = value:find("^((%d%d):(%d%d))(.*)$") as (integer, integer, string, string, string, string)
     if sm.match then
-        validate_hours_minutes(sm, _tointeger(hour), _tointeger(min), "local-time")
+        hour = _tointeger(hour_s)
+        min = _tointeger(min_s)
+        validate_hours_minutes(sm, hour, min, "local-time")
     
         if sm.ext ~= "" then
-            sm._, sm._, sec = sm.ext:find("^:(%d%d)$")
-            if sec then
-                validate_seconds(sm, _tointeger(sec), "local-time")
-                sm.value_type = "time-local"
-                sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType](sm.match .. sm.ext)
+            sm._, sm._, sec_s = sm.ext:find("^:(%d%d)$")
+            if sec_s then
+                sec = _tointeger(sec_s)
+                validate_seconds(sm, sec, "local-time")
+                assign_time_local(sm, sm.match .. sm.ext, hour, min, sec, 0)
                 return true
             end
 
-            sm._, sm._, sec = sm.ext:find("^:(%d%d)%.%d+$")
-            if sec then
-                validate_seconds(sm, _tointeger(sec), "local-time")
-                sm.value_type = "time-local"
-                sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType](sm.match .. sm.ext)
+            sm._, sm._, sec_s, msec_s = sm.ext:find("^:(%d%d)%.(%d+)$")
+            if sec_s then
+                sec = _tointeger(sec_s)
+                validate_seconds(sm, sec, "local-time")
+                assign_time_local(sm, sm.match .. sm.ext, hour, min, sec, _tointeger(msec_s))
                 return true
             end
         else
-            sm.value_type = "time-local"
-            sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType](sm.match .. ":00") -- assume :00 if no seconds are provided
+            assign_time_local(sm, sm.match .. ":00", hour, min, 0, 0) -- assume :00 if no seconds are provided
             return true
         end
     end
@@ -660,8 +704,7 @@ local function validate_datetime(sm: StateMachine, value: string): boolean
     if sm.match then
         year, month, day = _tointeger(year_s), _tointeger(month_s), _tointeger(day_s)
         validate_month_date(sm, year, month, day, "local-date")
-        sm.value_type = "date-local"
-        sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType](sm.match)
+        assign_date_local(sm, sm.match, year, month, day)
 
         -- small hack that allows datetimes with spaces to work
         -- does involve updating the current position in a validator...
@@ -679,20 +722,22 @@ local function validate_datetime(sm: StateMachine, value: string): boolean
         end
     end
 
-    sm._, sm._, sm.match, year_s, month_s, day_s, hour, min, sm.ext =
+    sm._, sm._, sm.match, year_s, month_s, day_s, hour_s, min_s, sm.ext =
         value:find("^((%d%d%d%d)%-(%d%d)%-(%d%d)[Tt ](%d%d):(%d%d))(.*)$")
         as (integer, integer, string, string, string, string, string, string, string)
     if sm.match then
-        validate_hours_minutes(sm, _tointeger(hour), _tointeger(min), "local-time")
+        hour = _tointeger(hour_s)
+        min = _tointeger(min_s)
+        validate_hours_minutes(sm, hour, min, "local-time")
         year, month, day = _tointeger(year_s), _tointeger(month_s), _tointeger(day_s)
         validate_month_date(sm, year, month, day, "local-date-time")
 
         -- see if seconds are next
         local temp_ext: string
-        sm._, sm._, sec, temp_ext = sm.ext:find("^:(%d%d)(.*)$") as (integer, integer, string, string)
-        if sec then
-            validate_seconds(sm, _tointeger(sec), "local-time")
-            sm.match = sm.match .. ":" .. sec
+        sm._, sm._, sec_s, temp_ext = sm.ext:find("^:(%d%d)(.*)$") as (integer, integer, string, string)
+        if sec_s then
+            validate_seconds(sm, _tointeger(sec_s), "local-time")
+            sm.match = sm.match .. ":" .. sec_s
             sm.ext = temp_ext
         else
             sm.match = sm.match .. ":00"
@@ -702,33 +747,33 @@ local function validate_datetime(sm: StateMachine, value: string): boolean
         if sm.ext ~= "" then
             sm.match = sm.match .. sm.ext
             if sm.ext:find("^%.%d+$") then
-                sm.value_type = "datetime-local"
-                sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType](sm.match)
+                sm._, sm._, msec_s = sm.ext:find("^%.(%d+)Z$")
+                assign_datetime_local(sm, sm.match, year, month, day, hour, min, sec, _tointeger(msec_s))
                 return true
             elseif sm.ext:find("^%.%d+Z$") then
-                sm.value_type = "datetime"
-                sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType](sm.match)
+                sm._, sm._, msec_s = sm.ext:find("^%.(%d+)Z$")
+                assign_datetime(sm, sm.match, year, month, day, hour, min, sec, _tointeger(msec_s))                
                 return true
             elseif sm.ext:find("^%.%d+[+-]%d%d:%d%d$") then
-                sm._, sm.end_seq, hour, min = sm.ext:find("^%.%d+[+-](%d%d):(%d%d)$") as (integer, integer, string, string)
-                validate_hours_minutes(sm, _tointeger(hour), _tointeger(min), "offset-date-time")
+                sm._, sm._, hour_s, min_s = sm.ext:find("^%.%d+[+-](%d%d):(%d%d)$") as (integer, integer, string, string)
+                validate_hours_minutes(sm, _tointeger(hour_s), _tointeger(min_s), "offset-date-time")
                 sm.value_type = "datetime"
                 sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType](sm.match)
                 return true
             elseif sm.ext:find("^[Zz]$") then
-                sm.value_type = "datetime"
-                sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType](sm.match)
+                assign_datetime(sm, sm.match, year, month, day, hour, min, sec)
                 return true
             elseif sm.ext:find("^[+-]%d%d:%d%d$") then
-                sm._, sm.end_seq, hour, min = sm.ext:find("^[+-](%d%d):(%d%d)$") as (integer, integer, string, string)
-                validate_hours_minutes(sm, _tointeger(hour), _tointeger(min), "offset-date-time")
+                sm._, sm._, hour_s, min_s = sm.ext:find("^[+-](%d%d):(%d%d)$") as (integer, integer, string, string)
+                validate_hours_minutes(sm, _tointeger(hour_s), _tointeger(min_s), "offset-date-time")
                 sm.value_type = "datetime"
                 sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType](sm.match)
                 return true
             end
         else
-            sm.value_type = "datetime-local"
-            sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType](sm.match)
+            assign_datetime_local(sm, sm.match, year, month, day, hour, min, sec)
+            -- sm.value_type = "datetime-local"
+            -- sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType](sm.match)
             return true
         end
     end
@@ -1118,6 +1163,7 @@ function tinytoml.parse(filename: string, options?: TinyTomlOptions): {string:an
         max_nesting_depth = 1000,
         max_filesize = 100000000,
         load_from_string = false,
+        encode_date_and_times_as = "string",
         type_conversion = {
             ["datetime"] = generic_type_conversion,
             ["datetime-local"] = generic_type_conversion,
@@ -1140,6 +1186,10 @@ function tinytoml.parse(filename: string, options?: TinyTomlOptions): {string:an
             assert(type(options.load_from_string) == "boolean", "the tinytoml option 'load_from_string' takes in a 'function'. You passed in the value '" .. tostring(options.load_from_string) .. "' of type '" .. type(options.load_from_string) .. "'")
         end
 
+        if options.encode_date_and_times_as ~= nil then
+            assert(type(options.encode_date_and_times_as) == "string", "the tinytoml option 'encode_date_and_times_as' takes in either the 'string' or 'table' (as type 'string'). You passed in the value '" .. tostring(options.encode_date_and_times_as) .. "' of type '" .. type(options.encode_date_and_times_as) .. "'")
+        end
+
         if options.type_conversion ~= nil then
             assert(type(options.load_from_string) == "table", "the tinytoml option 'type_conversion' takes in a 'table'. You passed in the value '" .. tostring(options.type_conversion) .. "' of type '" .. type(options.type_conversion) .. "'")
             for key, value in pairs(options.type_conversion) do
@@ -1155,6 +1205,7 @@ function tinytoml.parse(filename: string, options?: TinyTomlOptions): {string:an
         options.max_nesting_depth = options.max_nesting_depth or default_options.max_nesting_depth
         options.max_filesize = options.max_filesize or default_options.max_filesize
         options.load_from_string = options.load_from_string or default_options.load_from_string
+        options.encode_date_and_times_as = options.encode_date_and_times_as or default_options.encode_date_and_times_as
         options.type_conversion = options.type_conversion or default_options.type_conversion
         
         -- verify/setup the last couple of things

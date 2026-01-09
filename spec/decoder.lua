@@ -57,6 +57,6 @@ local function add_toml_test_tag(table_to_clear)
    return table_to_clear
 end
 
-local output = tinytoml.parse(io.read("*a"), { load_from_string = true })
+local output = tinytoml.parse(io.read("*a"), { load_from_string = true, encode_date_and_times_as = "table" })
 add_toml_test_tag(output)
 print(cjson.encode(output))
