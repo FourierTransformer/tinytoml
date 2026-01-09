@@ -28,12 +28,35 @@ local function float_to_string(x)
 end
 
 
-local assign_value_function = function(value, value_type)
-   if value_type == "float" then
-      return { ["value"] = float_to_string(value), ["type"] = value_type }
+local function add_toml_test_tag(table_to_clear)
+   if type(table_to_clear) ~= "table" then
+
+      if type(table_to_clear) == "number" then
+         if math.type(table_to_clear) == "integer" then
+            return {type="integer", value=tostring(table_to_clear)}
+         else
+            return {type="float", value=float_to_string(table_to_clear)}
+         end
+
+      elseif type(table_to_clear) == "string" then
+         return {type="string", value=table_to_clear}
+
+      elseif type(table_to_clear) == "boolean" then
+         return {type="bool", value=tostring(table_to_clear)}
+
+      else
+         return table_to_clear["value"]
+      end
+
    else
-      return { ["value"] = tostring(value), ["type"] = value_type }
+      for k, v in pairs(table_to_clear) do
+         table_to_clear[k] = add_toml_test_tag(v)
+      end
    end
+
+   return table_to_clear
 end
 
-print(cjson.encode(tinytoml.parse(io.read("*a"), { load_from_string = true, assign_value_function = assign_value_function })))
+local output = tinytoml.parse(io.read("*a"), { load_from_string = true })
+add_toml_test_tag(output)
+print(cjson.encode(output))

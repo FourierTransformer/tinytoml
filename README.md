@@ -73,10 +73,6 @@ There are a few parsing options available that are passed in the the `options` p
   The maximum nesting depth and maxmimum filesize in bytes. tinytoml will throw an error if either of these are exceeded.
 
 
-- `assign_value_function`
-
-  this method is called when assigning _every_ value to a table. It's mostly used to help perform the unit testing using [toml-test](https://github.com/toml-lang/toml-test), since they want to see the type and parsed value for comparison purposes. This option is the only one that has potential to change, so we advice against using it. If you need specific functionality that you're implementing through this (or find this function useful in general) - please let us know.
-
 ## Encoding TOML
 
 tinytoml includes a basic TOML encoder, since we don't preserve comments (and have no plans to), this library is not good for _editing_ hand-written TOML files. If you want to do that, the [toml-edit library](https://github.com/lumen-oss/toml-edit.lua) is a much better choice. However, there may be situations where you need a pure Lua TOML encoder, and tinytoml could prove useful.

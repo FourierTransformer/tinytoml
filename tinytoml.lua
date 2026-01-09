@@ -12,7 +12,6 @@
 
 
 
-
 local tinytoml = {}
 
 
@@ -788,11 +787,7 @@ local function create_array(sm)
 end
 
 local function add_array_comma(sm)
-   if sm.value_type == "array" or sm.value_type == "inline-table" then
-      table.insert(sm.arrays[sm.nested_arrays], sm.value)
-   else
-      table.insert(sm.arrays[sm.nested_arrays], sm.options.assign_value_function(sm.value, sm.value_type))
-   end
+   table.insert(sm.arrays[sm.nested_arrays], sm.value)
    sm.value = nil
 
    sm.i = sm.i + 1
@@ -932,11 +927,7 @@ end
 
 local function assign_value(sm)
    local output = {}
-   if sm.value_type == "array" or sm.value_type == "inline-table" then
-      output = sm.value
-   else
-      output = sm.options.assign_value_function(sm.value, sm.value_type)
-   end
+   output = sm.value
 
 
    local out_table = sm.current_table
@@ -1118,7 +1109,6 @@ local transitions = {
    },
 }
 
-local function generic_assign(value) return value end
 local function generic_type_conversion(raw_value) return raw_value end
 
 function tinytoml.parse(filename, options)
@@ -1128,7 +1118,6 @@ function tinytoml.parse(filename, options)
       max_nesting_depth = 1000,
       max_filesize = 100000000,
       load_from_string = false,
-      assign_value_function = generic_assign,
       type_conversion = {
          ["datetime"] = generic_type_conversion,
          ["datetime-local"] = generic_type_conversion,
@@ -1145,10 +1134,6 @@ function tinytoml.parse(filename, options)
 
       if options.max_filesize ~= nil then
          assert(type(options.max_filesize) == "number", "the tinytoml option 'max_filesize' takes in a 'number'. You passed in the value '" .. tostring(options.max_filesize) .. "' of type '" .. type(options.max_filesize) .. "'")
-      end
-
-      if options.assign_value_function ~= nil then
-         assert(type(options.assign_value_function) == "function", "the tinytoml option 'assign_value_function' takes in a 'function'. You passed in the value '" .. tostring(options.assign_value_function) .. "' of type '" .. type(options.assign_value_function) .. "'")
       end
 
       if options.load_from_string ~= nil then
@@ -1170,7 +1155,6 @@ function tinytoml.parse(filename, options)
       options.max_nesting_depth = options.max_nesting_depth or default_options.max_nesting_depth
       options.max_filesize = options.max_filesize or default_options.max_filesize
       options.load_from_string = options.load_from_string or default_options.load_from_string
-      options.assign_value_function = options.assign_value_function or default_options.assign_value_function
       options.type_conversion = options.type_conversion or default_options.type_conversion
 
 
