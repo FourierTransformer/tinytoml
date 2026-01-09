@@ -68,6 +68,11 @@ There are a few parsing options available that are passed in the the `options` p
   tinytoml.parse("a=2024-10-31T12:49:00Z", {load_from_string=true, type_conversion=type_conversion})
   ```
 
+- `max_nesting_depth` (default `1000`) and `max_filesize` (default `100000000` - 100 MB)
+
+  The maximum nesting depth and maxmimum filesize in bytes. tinytoml will throw an error if either of these are exceeded.
+
+
 - `assign_value_function`
 
   this method is called when assigning _every_ value to a table. It's mostly used to help perform the unit testing using [toml-test](https://github.com/toml-lang/toml-test), since they want to see the type and parsed value for comparison purposes. This option is the only one that has potential to change, so we advice against using it. If you need specific functionality that you're implementing through this (or find this function useful in general) - please let us know.
@@ -117,3 +122,23 @@ local_date = 1979-05-27
 ```
 
 This effectively means you'll have to pre-process dates and times to strings in your codebase, before passing them to tinytoml's encoder.
+
+## Comparisons
+Here's a helpful comparison table that can be useful in deciding which Lua TOML parser to use. The data was collected with the most recent versions as of 1/2026.
+
+| Feature           | tinytoml                      | toml-edit                     | toml.lua                      | toml2lua                       | tomlua                        |
+|:------------------|:------------------------------|:------------------------------|:------------------------------|:-------------------------------|:------------------------------|
+| Language          | Lua                           | Rust binding                  | C++ binding                   | Lua                            | C                             |
+| TOML Version      | 1.1.0                         | 1.0.0                         | 1.0.0                         | 1.0.0                          | Not Specified                 |
+| UTF-8 Support     | ✅                             | ✅                             | ✅                             | ✅                              | ✅                             |
+| Passes toml-test  | ✅                             | ✅                             | ✅                             | ❌                              | ❌                             |
+| Date/Time Support | Register Method               |                               | Custom Userdata/Lua Table     | Lua Table                      | Custom Userdata               |
+| Encoder           | Basic                         | Comment Preserving            | Basic, many options           | Basic                          | Very Configurable             |
+| 16 KB TOML decode | Lua: 7.8ms <br> LuaJIT: 2.7ms | Lua: 2.8ms <br> LuaJIT: 1.0ms | Lua: dnf <br> LuaJIT: 2.4ms   | Lua: 32.5ms <br> LuaJIT: 7.0ms | Lua: 1.6ms <br> LuaJIT: .29ms |
+| 8 MB TOML decode  | Lua: 3.9s <br> LuaJIT: 423ms  | Lua: 929ms <br> LuaJIT: 462ms | Lua: error <br> LuaJIT: error | Lua: 32.01s <br> LuaJIT: 3.13s  | Lua: 318ms <br> LuaJIT: 119.7ms     |
+
+**NOTES:**
+- tinytoml, toml2lua, and tomlua's toml-test support were verified by running through toml-test. toml-edit and toml.lua were based on the bindings, which both passed toml-test.
+- I was using hyperfine to run the tests, and toml.lua's time estimate rapidly started rising in the middle of the 16KB run and segfaulted with the higher runs.
+- Tests were run in a docker container running on an arm64 Mac, as tomlua did not compile on macOS at the time the benchmarks were taken.
+- Standard benchmark disclaimer: These are all relative to each other and milage on your machine will vary.

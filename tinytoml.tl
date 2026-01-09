@@ -147,8 +147,6 @@ local record StateMachine
     meta_table: {any:{MTType}}
     current_meta_table: {any:{MTType}}
     inline_table_backup: {InlineTableSave} -- stores all the stuff as we descend into nested inline-tables
-    assign_value_function: function(value: any, value_type?: string): any
-    type_conversion: {TomlType:function<T>(raw_value: string): T}
 end
 
 local sbyte = string.byte
@@ -639,7 +637,7 @@ local function validate_datetime(sm: StateMachine, value: string): boolean
             if sec then
                 validate_seconds(sm, _tointeger(sec), "local-time")
                 sm.value_type = "time-local"
-                sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
+                sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType](sm.match .. sm.ext)
                 return true
             end
 
@@ -647,12 +645,12 @@ local function validate_datetime(sm: StateMachine, value: string): boolean
             if sec then
                 validate_seconds(sm, _tointeger(sec), "local-time")
                 sm.value_type = "time-local"
-                sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
+                sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType](sm.match .. sm.ext)
                 return true
             end
         else
             sm.value_type = "time-local"
-            sm.value = sm.type_conversion[sm.value_type](sm.match .. ":00") -- assume :00 if no seconds are provided
+            sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType](sm.match .. ":00") -- assume :00 if no seconds are provided
             return true
         end
     end
@@ -664,7 +662,7 @@ local function validate_datetime(sm: StateMachine, value: string): boolean
         year, month, day = _tointeger(year_s), _tointeger(month_s), _tointeger(day_s)
         validate_month_date(sm, year, month, day, "local-date")
         sm.value_type = "date-local"
-        sm.value = sm.type_conversion[sm.value_type](sm.match)
+        sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType](sm.match)
 
         -- small hack that allows datetimes with spaces to work
         -- does involve updating the current position in a validator...
@@ -706,32 +704,32 @@ local function validate_datetime(sm: StateMachine, value: string): boolean
             sm.match = sm.match .. sm.ext
             if sm.ext:find("^%.%d+$") then
                 sm.value_type = "datetime-local"
-                sm.value = sm.type_conversion[sm.value_type](sm.match)
+                sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType](sm.match)
                 return true
             elseif sm.ext:find("^%.%d+Z$") then
                 sm.value_type = "datetime"
-                sm.value = sm.type_conversion[sm.value_type](sm.match)
+                sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType](sm.match)
                 return true
             elseif sm.ext:find("^%.%d+[+-]%d%d:%d%d$") then
                 sm._, sm.end_seq, hour, min = sm.ext:find("^%.%d+[+-](%d%d):(%d%d)$") as (integer, integer, string, string)
                 validate_hours_minutes(sm, _tointeger(hour), _tointeger(min), "offset-date-time")
                 sm.value_type = "datetime"
-                sm.value = sm.type_conversion[sm.value_type](sm.match)
+                sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType](sm.match)
                 return true
             elseif sm.ext:find("^[Zz]$") then
                 sm.value_type = "datetime"
-                sm.value = sm.type_conversion[sm.value_type](sm.match)
+                sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType](sm.match)
                 return true
             elseif sm.ext:find("^[+-]%d%d:%d%d$") then
                 sm._, sm.end_seq, hour, min = sm.ext:find("^[+-](%d%d):(%d%d)$") as (integer, integer, string, string)
                 validate_hours_minutes(sm, _tointeger(hour), _tointeger(min), "offset-date-time")
                 sm.value_type = "datetime"
-                sm.value = sm.type_conversion[sm.value_type](sm.match)
+                sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType](sm.match)
                 return true
             end
         else
             sm.value_type = "datetime-local"
-            sm.value = sm.type_conversion[sm.value_type](sm.match)
+            sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType](sm.match)
             return true
         end
     end
@@ -793,7 +791,7 @@ local function add_array_comma(sm: StateMachine)
     if sm.value_type == "array" or sm.value_type=="inline-table" then
         table.insert(sm.arrays[sm.nested_arrays], sm.value)
     else
-        table.insert(sm.arrays[sm.nested_arrays], sm.assign_value_function(sm.value, sm.value_type))
+        table.insert(sm.arrays[sm.nested_arrays], sm.options.assign_value_function(sm.value, sm.value_type))
     end
     sm.value = nil -- to handle the post comma condition
 
@@ -937,7 +935,7 @@ local function assign_value(sm: StateMachine)
     if sm.value_type == "array" or sm.value_type == "inline-table" then
         output = sm.value as {any}
     else
-        output = sm.assign_value_function(sm.value, sm.value_type) as {any}
+        output = sm.options.assign_value_function(sm.value, sm.value_type) as {any}
     end
 
     -- iterate over keys, updating the pointer at "out_table"
@@ -1125,34 +1123,74 @@ local function generic_type_conversion<T>(raw_value: string): T return raw_value
 
 function tinytoml.parse(filename: string, options?: TinyTomlOptions): {string:any}
     local sm: StateMachine = {}
-    sm.assign_value_function = generic_assign 
-    sm.type_conversion = {
-        ["datetime"] = generic_type_conversion,
-        ["datetime-local"] = generic_type_conversion,
-        ["date-local"] = generic_type_conversion,
-        ["time-local"] = generic_type_conversion
+
+    local default_options: TinyTomlOptions = {
+        max_nesting_depth = 1000,
+        max_filesize = 100000000,
+        load_from_string = false,
+        assign_value_function = generic_assign,
+        type_conversion = {
+            ["datetime"] = generic_type_conversion,
+            ["datetime-local"] = generic_type_conversion,
+            ["date-local"] = generic_type_conversion,
+            ["time-local"] = generic_type_conversion
+        }
     }
-    
+
     if options then
-        if options.load_from_string then
+        -- type check all the options!
+        if options.max_nesting_depth ~= nil then
+            assert(type(options.max_nesting_depth) == "number", "the tinytoml option 'max_nesting_depth' takes in a 'number'. You passed in the value '" .. tostring(options.max_nesting_depth) .. "' of type '" .. type(options.max_nesting_depth) .. "'")
+        end
+
+        if options.max_filesize ~= nil then
+            assert(type(options.max_filesize) == "number", "the tinytoml option 'max_filesize' takes in a 'number'. You passed in the value '" .. tostring(options.max_filesize) .. "' of type '" .. type(options.max_filesize) .. "'")
+        end
+
+        if options.assign_value_function ~= nil then
+            assert(type(options.assign_value_function) == "function", "the tinytoml option 'assign_value_function' takes in a 'function'. You passed in the value '" .. tostring(options.assign_value_function) .. "' of type '" .. type(options.assign_value_function) .. "'")
+        end
+
+        if options.load_from_string ~= nil then
+            assert(type(options.load_from_string) == "boolean", "the tinytoml option 'load_from_string' takes in a 'function'. You passed in the value '" .. tostring(options.load_from_string) .. "' of type '" .. type(options.load_from_string) .. "'")
+        end
+
+        if options.type_conversion ~= nil then
+            assert(type(options.load_from_string) == "table", "the tinytoml option 'type_conversion' takes in a 'table'. You passed in the value '" .. tostring(options.type_conversion) .. "' of type '" .. type(options.type_conversion) .. "'")
+            for key, value in pairs(options.type_conversion) do
+                assert(type(key) == "string")
+                if not default_options.type_conversion[key] then
+                    error("")
+                end
+                assert(type(value) == "function")
+            end
+        end
+
+        -- put in the defaults
+        options.max_nesting_depth = options.max_nesting_depth or default_options.max_nesting_depth
+        options.max_filesize = options.max_filesize or default_options.max_filesize
+        options.load_from_string = options.load_from_string or default_options.load_from_string
+        options.assign_value_function = options.assign_value_function or default_options.assign_value_function
+        options.type_conversion = options.type_conversion or default_options.type_conversion
+        
+        -- verify/setup the last couple of things
+        if options.load_from_string == true then
             sm.input = filename
             sm.filename = "string input"
         end
-        if options.assign_value_function then
-            sm.assign_value_function = options.assign_value_function        
-        else
-        end
-        if options.type_conversion then
-            for key, value in pairs(options.type_conversion) do
-                sm.type_conversion[(key as TomlType)] = value
+
+        -- ensure a value is set for all the options.type_conversion
+        for key, value in pairs(default_options.type_conversion) do
+            if options.type_conversion[key] == nil then
+                options.type_conversion[key] = value
             end
         end
-        options.max_filesize = options.max_filesize or 100000000
-        options.max_nesting_depth = options.max_nesting_depth or 1000
+
     else
-        options = {load_from_string = false, max_filesize = 100000000, max_nesting_depth = 1000}
+        options = default_options
     end
 
+    -- finally set sm.options
     sm.options = options
 
     if options.load_from_string == false then
@@ -1272,7 +1310,8 @@ local function escape_string(str: string, multiline: boolean, is_key: boolean): 
         
         -- setting up a _very_ basic StateMachine
         local sm: StateMachine = {input=str, i=1, line_number=1, line_number_char_index=1}
-        sm.type_conversion = {
+        sm.options = {}
+        sm.options.type_conversion = {
             ["datetime"] = generic_type_conversion,
             ["datetime-local"] = generic_type_conversion,
             ["date-local"] = generic_type_conversion,
@@ -1430,7 +1469,7 @@ local function encoder(input_table: any, encoded_string: {string}, depth: {strin
                 end
                 error_message[#error_message + 1] = escape_key(k)
                 error_message[#error_message + 1] = "', received the following error message:\n\n"
-                _, _, error_or_encoded_element = error_or_encoded_element:find(".-:.-: (.*)")
+                -- _, _, error_or_encoded_element = error_or_encoded_element:find(".-:.-: (.*)")
                 error_message[#error_message + 1] = error_or_encoded_element
                 error(table.concat(error_message))
             end

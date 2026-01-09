@@ -1,9 +1,9 @@
 package = "tinytoml"
-version = "0.1.0-1"
+version = "1.0.0-1"
 
 source = {
     url = "git://github.com/FourierTransformer/tinytoml.git",
-    tag = "0.1.0"
+    tag = "1.0.0"
 }
 
 description = {
@@ -13,7 +13,6 @@ description = {
    It supports all TOML 1.1.0 features including parsing strings, numbers, datetimes, arrays, inline-tables and even validating UTF-8 with good error messages if anything fails!
   ]],
     homepage = "https://github.com/FourierTransformer/tinytoml",
-    maintainer = "Fourier Transformer <ftransformer@protonmail.com>",
     license = "MIT"
 }
 
