@@ -13,6 +13,11 @@
 
 
 
+
+
+
+
+
 local tinytoml = {}
 
 
@@ -28,8 +33,6 @@ tinytoml._TOML_VERSION = TOML_VERSION
 tinytoml._DESCRIPTION = "a single-file pure Lua TOML parser"
 tinytoml._URL = "https://github.com/FourierTransformer/tinytoml"
 tinytoml._LICENSE = "MIT"
-
-
 
 
 
@@ -628,31 +631,73 @@ local function validate_month_date(sm, year, month, day, anchor)
    end
 end
 
+local function assign_time_local(sm, match, hour, min, sec, msec)
+   sm.value_type = "time-local"
+   if sm.options.encode_datetime_as == "string" then
+      sm.value = sm.options.type_conversion[sm.value_type](match)
+   else
+      sm.value = sm.options.type_conversion[sm.value_type]({ hour = hour, min = min, sec = sec, msec = msec })
+   end
+end
+
+local function assign_date_local(sm, match, year, month, day)
+   sm.value_type = "date-local"
+   if sm.options.encode_datetime_as == "string" then
+      sm.value = sm.options.type_conversion[sm.value_type](match)
+   else
+      sm.value = sm.options.type_conversion[sm.value_type]({ year = year, month = month, day = day })
+   end
+end
+
+local function assign_datetime_local(sm, match, year, month, day, hour, min, sec, msec)
+   sm.value_type = "datetime-local"
+   if sm.options.encode_datetime_as == "string" then
+      sm.value = sm.options.type_conversion[sm.value_type](match)
+   else
+      sm.value = sm.options.type_conversion[sm.value_type]({ year = year, month = month, day = day, hour = hour, min = min, sec = sec, msec = msec or 0 })
+   end
+end
+
+local function assign_datetime(sm, match, year, month, day, hour, min, sec, msec, tz)
+   if tz then
+      local hour_s, min_s
+      sm._, sm._, hour_s, min_s = tz:find("^[+-](%d%d):(%d%d)$")
+      validate_hours_minutes(sm, _tointeger(hour_s), _tointeger(min_s), "offset-date-time")
+   end
+   sm.value_type = "datetime"
+   if sm.options.encode_datetime_as == "string" then
+      sm.value = sm.options.type_conversion[sm.value_type](match)
+   else
+      sm.value = sm.options.type_conversion[sm.value_type]({ year = year, month = month, day = day, hour = hour, min = min, sec = sec, msec = msec or 0, time_offset = tz or "00:00" })
+   end
+end
+
 local function validate_datetime(sm, value)
+   local hour_s, min_s, sec_s, msec_s
    local hour, min, sec
-   sm._, sm._, sm.match, hour, min, sm.ext = value:find("^((%d%d):(%d%d))(.*)$")
+   sm._, sm._, sm.match, hour_s, min_s, sm.ext = value:find("^((%d%d):(%d%d))(.*)$")
    if sm.match then
-      validate_hours_minutes(sm, _tointeger(hour), _tointeger(min), "local-time")
+      hour, min = _tointeger(hour_s), _tointeger(min_s)
+      validate_hours_minutes(sm, hour, min, "local-time")
 
       if sm.ext ~= "" then
-         sm._, sm._, sec = sm.ext:find("^:(%d%d)$")
-         if sec then
-            validate_seconds(sm, _tointeger(sec), "local-time")
-            sm.value_type = "time-local"
-            sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
+         sm._, sm._, sec_s = sm.ext:find("^:(%d%d)$")
+         if sec_s then
+            sec = _tointeger(sec_s)
+            validate_seconds(sm, sec, "local-time")
+            assign_time_local(sm, sm.match .. sm.ext, hour, min, sec, 0)
             return true
          end
 
-         sm._, sm._, sec = sm.ext:find("^:(%d%d)%.%d+$")
-         if sec then
-            validate_seconds(sm, _tointeger(sec), "local-time")
-            sm.value_type = "time-local"
-            sm.value = sm.type_conversion[sm.value_type](sm.match .. sm.ext)
+         sm._, sm._, sec_s, msec_s = sm.ext:find("^:(%d%d)%.(%d+)$")
+         if sec_s then
+            sec = _tointeger(sec_s)
+            validate_seconds(sm, sec, "local-time")
+            assign_time_local(sm, sm.match .. sm.ext, hour, min, sec, _tointeger(msec_s))
             return true
          end
       else
-         sm.value_type = "time-local"
-         sm.value = sm.type_conversion[sm.value_type](sm.match .. ":00")
+         assign_time_local(sm, sm.match .. ":00", hour, min, 0, 0)
          return true
       end
    end
@@ -663,8 +708,7 @@ local function validate_datetime(sm, value)
    if sm.match then
       year, month, day = _tointeger(year_s), _tointeger(month_s), _tointeger(day_s)
       validate_month_date(sm, year, month, day, "local-date")
-      sm.value_type = "date-local"
-      sm.value = sm.type_conversion[sm.value_type](sm.match)
+      assign_date_local(sm, sm.match, year, month, day)
 
 
 
@@ -682,20 +726,21 @@ local function validate_datetime(sm, value)
       end
    end
 
-   sm._, sm._, sm.match, year_s, month_s, day_s, hour, min, sm.ext =
+   sm._, sm._, sm.match, year_s, month_s, day_s, hour_s, min_s, sm.ext =
    value:find("^((%d%d%d%d)%-(%d%d)%-(%d%d)[Tt ](%d%d):(%d%d))(.*)$")
 
    if sm.match then
-      validate_hours_minutes(sm, _tointeger(hour), _tointeger(min), "local-time")
+      hour, min = _tointeger(hour_s), _tointeger(min_s)
+      validate_hours_minutes(sm, hour, min, "local-time")
       year, month, day = _tointeger(year_s), _tointeger(month_s), _tointeger(day_s)
       validate_month_date(sm, year, month, day, "local-date-time")
 
 
       local temp_ext
-      sm._, sm._, sec, temp_ext = sm.ext:find("^:(%d%d)(.*)$")
-      if sec then
-         validate_seconds(sm, _tointeger(sec), "local-time")
-         sm.match = sm.match .. ":" .. sec
+      sm._, sm._, sec_s, temp_ext = sm.ext:find("^:(%d%d)(.*)$")
+      if sec_s then
+         validate_seconds(sm, _tointeger(sec_s), "local-time")
+         sm.match = sm.match .. ":" .. sec_s
          sm.ext = temp_ext
       else
          sm.match = sm.match .. ":00"
@@ -705,33 +750,29 @@ local function validate_datetime(sm, value)
       if sm.ext ~= "" then
          sm.match = sm.match .. sm.ext
          if sm.ext:find("^%.%d+$") then
-            sm.value_type = "datetime-local"
-            sm.value = sm.type_conversion[sm.value_type](sm.match)
+            sm._, sm._, msec_s = sm.ext:find("^%.(%d+)Z$")
+            assign_datetime_local(sm, sm.match, year, month, day, hour, min, sec, _tointeger(msec_s))
             return true
          elseif sm.ext:find("^%.%d+Z$") then
-            sm.value_type = "datetime"
-            sm.value = sm.type_conversion[sm.value_type](sm.match)
+            sm._, sm._, msec_s = sm.ext:find("^%.(%d+)Z$")
+            assign_datetime(sm, sm.match, year, month, day, hour, min, sec, _tointeger(msec_s))
             return true
          elseif sm.ext:find("^%.%d+[+-]%d%d:%d%d$") then
-            sm._, sm.end_seq, hour, min = sm.ext:find("^%.%d+[+-](%d%d):(%d%d)$")
-            validate_hours_minutes(sm, _tointeger(hour), _tointeger(min), "offset-date-time")
-            sm.value_type = "datetime"
-            sm.value = sm.type_conversion[sm.value_type](sm.match)
+            local tz_s
+            sm._, sm._, msec_s, tz_s = sm.ext:find("^%.(%d+)([+-]%d%d:%d%d)$")
+            assign_datetime(sm, sm.match, year, month, day, hour, min, sec, _tointeger(msec_s), tz_s)
             return true
          elseif sm.ext:find("^[Zz]$") then
-            sm.value_type = "datetime"
-            sm.value = sm.type_conversion[sm.value_type](sm.match)
+            assign_datetime(sm, sm.match, year, month, day, hour, min, sec)
             return true
          elseif sm.ext:find("^[+-]%d%d:%d%d$") then
-            sm._, sm.end_seq, hour, min = sm.ext:find("^[+-](%d%d):(%d%d)$")
-            validate_hours_minutes(sm, _tointeger(hour), _tointeger(min), "offset-date-time")
-            sm.value_type = "datetime"
-            sm.value = sm.type_conversion[sm.value_type](sm.match)
+            local tz_s
+            sm._, sm._, tz_s = sm.ext:find("^([+-]%d%d:%d%d)$")
+            assign_datetime(sm, sm.match, year, month, day, hour, min, sec, 0, tz_s)
             return true
          end
       else
-         sm.value_type = "datetime-local"
-         sm.value = sm.type_conversion[sm.value_type](sm.match)
+         assign_datetime_local(sm, sm.match, year, month, day, hour, min, sec)
          return true
       end
    end
@@ -790,11 +831,7 @@ local function create_array(sm)
 end
 
 local function add_array_comma(sm)
-   if sm.value_type == "array" or sm.value_type == "inline-table" then
-      table.insert(sm.arrays[sm.nested_arrays], sm.value)
-   else
-      table.insert(sm.arrays[sm.nested_arrays], sm.assign_value_function(sm.value, sm.value_type))
-   end
+   table.insert(sm.arrays[sm.nested_arrays], sm.value)
    sm.value = nil
 
    sm.i = sm.i + 1
@@ -934,11 +971,7 @@ end
 
 local function assign_value(sm)
    local output = {}
-   if sm.value_type == "array" or sm.value_type == "inline-table" then
-      output = sm.value
-   else
-      output = sm.assign_value_function(sm.value, sm.value_type)
-   end
+   output = sm.value
 
 
    local out_table = sm.current_table
@@ -1120,38 +1153,77 @@ local transitions = {
    },
 }
 
-local function generic_assign(value) return value end
 local function generic_type_conversion(raw_value) return raw_value end
 
 function tinytoml.parse(filename, options)
    local sm = {}
-   sm.assign_value_function = generic_assign
-   sm.type_conversion = {
-      ["datetime"] = generic_type_conversion,
-      ["datetime-local"] = generic_type_conversion,
-      ["date-local"] = generic_type_conversion,
-      ["time-local"] = generic_type_conversion,
+
+   local default_options = {
+      max_nesting_depth = 1000,
+      max_filesize = 100000000,
+      load_from_string = false,
+      encode_datetime_as = "string",
+      type_conversion = {
+         ["datetime"] = generic_type_conversion,
+         ["datetime-local"] = generic_type_conversion,
+         ["date-local"] = generic_type_conversion,
+         ["time-local"] = generic_type_conversion,
+      },
    }
 
    if options then
-      if options.load_from_string then
+
+      if options.max_nesting_depth ~= nil then
+         assert(type(options.max_nesting_depth) == "number", "the tinytoml option 'max_nesting_depth' takes in a 'number'. You passed in the value '" .. tostring(options.max_nesting_depth) .. "' of type '" .. type(options.max_nesting_depth) .. "'")
+      end
+
+      if options.max_filesize ~= nil then
+         assert(type(options.max_filesize) == "number", "the tinytoml option 'max_filesize' takes in a 'number'. You passed in the value '" .. tostring(options.max_filesize) .. "' of type '" .. type(options.max_filesize) .. "'")
+      end
+
+      if options.load_from_string ~= nil then
+         assert(type(options.load_from_string) == "boolean", "the tinytoml option 'load_from_string' takes in a 'function'. You passed in the value '" .. tostring(options.load_from_string) .. "' of type '" .. type(options.load_from_string) .. "'")
+      end
+
+      if options.encode_datetime_as ~= nil then
+         assert(type(options.encode_datetime_as) == "string", "the tinytoml option 'encode_datetime_as' takes in either the 'string' or 'table' (as type 'string'). You passed in the value '" .. tostring(options.encode_datetime_as) .. "' of type '" .. type(options.encode_datetime_as) .. "'")
+      end
+
+      if options.type_conversion ~= nil then
+         assert(type(options.type_conversion) == "table", "the tinytoml option 'type_conversion' takes in a 'table'. You passed in the value '" .. tostring(options.type_conversion) .. "' of type '" .. type(options.type_conversion) .. "'")
+         for key, value in pairs(options.type_conversion) do
+            assert(type(key) == "string")
+            if not default_options.type_conversion[key] then
+               error("")
+            end
+            assert(type(value) == "function")
+         end
+      end
+
+
+      options.max_nesting_depth = options.max_nesting_depth or default_options.max_nesting_depth
+      options.max_filesize = options.max_filesize or default_options.max_filesize
+      options.load_from_string = options.load_from_string or default_options.load_from_string
+      options.encode_datetime_as = options.encode_datetime_as or default_options.encode_datetime_as
+      options.type_conversion = options.type_conversion or default_options.type_conversion
+
+
+      if options.load_from_string == true then
          sm.input = filename
          sm.filename = "string input"
       end
-      if options.assign_value_function then
-         sm.assign_value_function = options.assign_value_function
-      else
-      end
-      if options.type_conversion then
-         for key, value in pairs(options.type_conversion) do
-            sm.type_conversion[(key)] = value
+
+
+      for key, value in pairs(default_options.type_conversion) do
+         if options.type_conversion[key] == nil then
+            options.type_conversion[key] = value
          end
       end
-      options.max_filesize = options.max_filesize or 100000000
-      options.max_nesting_depth = options.max_nesting_depth or 1000
+
    else
-      options = { load_from_string = false, max_filesize = 100000000, max_nesting_depth = 1000 }
+      options = default_options
    end
+
 
    sm.options = options
 
@@ -1272,12 +1344,14 @@ local function escape_string(str, multiline, is_key)
 
 
       local sm = { input = str, i = 1, line_number = 1, line_number_char_index = 1 }
-      sm.type_conversion = {
+      sm.options = {}
+      sm.options.type_conversion = {
          ["datetime"] = generic_type_conversion,
          ["datetime-local"] = generic_type_conversion,
          ["date-local"] = generic_type_conversion,
          ["time-local"] = generic_type_conversion,
       }
+      sm.options.encode_datetime_as = "string"
 
 
       sm._, sm.end_seq, sm.match = sm.input:find("^([^ #\r\n,%[{%]}]+)", sm.i)
