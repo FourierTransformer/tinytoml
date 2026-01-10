@@ -9,7 +9,7 @@ tinytoml passes all the [toml-test](https://github.com/toml-lang/toml-test) use 
 
 Current Supported TOML Version: 1.1.0
 
-> [!NOTE] Table of Contents
+> [!NOTE]
 > | [Installing](#installing) | [Parsing](#parsing-toml) | [Encoding](#encoding-toml) | [Comparison](#comparison) |
 > | ---------- | ------- | -------- | ---------- |
 
