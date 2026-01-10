@@ -168,7 +168,7 @@ Here's a helpful comparison table that can be useful in deciding which Lua TOML 
 | Date/Time Support | String/Table/Register Method  |                               | Custom Userdata/Lua Table     | Lua Table                      | Custom Userdata               |
 | Encoder           | Basic                         | Comment Preserving            | Basic, many options           | Basic                          | Very Configurable             |
 | 16 KB TOML decode | Lua: 3.9ms <br> LuaJIT: 2.7ms | Lua: 2.8ms <br> LuaJIT: 1.0ms | Lua: dnf <br> LuaJIT: 2.4ms   | Lua: 32.5ms <br> LuaJIT: 7.0ms | Lua: 1.6ms <br> LuaJIT: .29ms |
-| 8 MB TOML decode  | Lua: 1.49s <br> LuaJIT: 415ms  | Lua: 929ms <br> LuaJIT: 462ms | Lua: error <br> LuaJIT: error | Lua: 32.01s <br> LuaJIT: 3.13s  | Lua: 318ms <br> LuaJIT: 119.7ms     |
+| 8 MB TOML decode  | Lua: 1.49s <br> LuaJIT: 415ms  | Lua: 929ms <br> LuaJIT: 462ms | Lua: error <br> LuaJIT: error | Lua: 12.01s <br> LuaJIT: 3.13s  | Lua: 318ms <br> LuaJIT: 119.7ms     |
 
 **NOTES:**
 - tinytoml, toml2lua, and tomlua's toml-test support were verified by running through toml-test. toml-edit and toml.lua were based on the bindings, which both passed toml-test.
