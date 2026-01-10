@@ -9,8 +9,8 @@ tinytoml passes all the [toml-test](https://github.com/toml-lang/toml-test) use 
 
 Current Supported TOML Version: 1.1.0
 
-> [!NOTE]
-> | [Installing](#installing) | [Parsing](#parsing-toml) | [Encoding](#encoding-toml) | [Comparison]() |
+> [!NOTE] Table of Contents
+> | [Installing](#installing) | [Parsing](#parsing-toml) | [Encoding](#encoding-toml) | [Comparison](#comparison) |
 > | ---------- | ------- | -------- | ---------- |
 
 ## Installing
@@ -159,7 +159,7 @@ This effectively means you'll have to pre-process dates and times to strings in 
 ## Comparison
 Here's a helpful comparison table that can be useful in deciding which Lua TOML parser to use. The data was collected with the most recent versions as of 1/2026.
 
-| Feature           | tinytoml                      | toml-edit                     | toml.lua                      | toml2lua                       | tomlua                        |
+| Feature / Library | tinytoml                      | toml-edit                     | toml.lua                      | toml2lua                       | tomlua                        |
 |:------------------|:------------------------------|:------------------------------|:------------------------------|:-------------------------------|:------------------------------|
 | Language          | Lua                           | Rust binding                  | C++ binding                   | Lua                            | C                             |
 | TOML Version      | 1.1.0                         | 1.0.0                         | 1.0.0                         | 1.0.0                          | Not Specified                 |
