@@ -66,6 +66,6 @@ local type_conversion = {
   ["time-local"] = function(raw_string) return {type="time-local", value=raw_string} end,
 }
 
-local output = tinytoml.parse(io.read("*a"), { load_from_string = true, encode_date_and_times_as = "string", type_conversion = type_conversion })
+local output = tinytoml.parse(io.read("*a"), { load_from_string = true, encode_datetime_as = "string", type_conversion = type_conversion })
 add_toml_test_tag(output)
 print(cjson.encode(output))

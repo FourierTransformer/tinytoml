@@ -633,7 +633,7 @@ end
 
 local function assign_time_local(sm, match, hour, min, sec, msec)
    sm.value_type = "time-local"
-   if sm.options.encode_date_and_times_as == "string" then
+   if sm.options.encode_datetime_as == "string" then
       sm.value = sm.options.type_conversion[sm.value_type](match)
    else
       sm.value = sm.options.type_conversion[sm.value_type]({ hour = hour, min = min, sec = sec, msec = msec })
@@ -642,7 +642,7 @@ end
 
 local function assign_date_local(sm, match, year, month, day)
    sm.value_type = "date-local"
-   if sm.options.encode_date_and_times_as == "string" then
+   if sm.options.encode_datetime_as == "string" then
       sm.value = sm.options.type_conversion[sm.value_type](match)
    else
       sm.value = sm.options.type_conversion[sm.value_type]({ year = year, month = month, day = day })
@@ -651,7 +651,7 @@ end
 
 local function assign_datetime_local(sm, match, year, month, day, hour, min, sec, msec)
    sm.value_type = "datetime-local"
-   if sm.options.encode_date_and_times_as == "string" then
+   if sm.options.encode_datetime_as == "string" then
       sm.value = sm.options.type_conversion[sm.value_type](match)
    else
       sm.value = sm.options.type_conversion[sm.value_type]({ year = year, month = month, day = day, hour = hour, min = min, sec = sec, msec = msec or 0 })
@@ -665,7 +665,7 @@ local function assign_datetime(sm, match, year, month, day, hour, min, sec, msec
       validate_hours_minutes(sm, _tointeger(hour_s), _tointeger(min_s), "offset-date-time")
    end
    sm.value_type = "datetime"
-   if sm.options.encode_date_and_times_as == "string" then
+   if sm.options.encode_datetime_as == "string" then
       sm.value = sm.options.type_conversion[sm.value_type](match)
    else
       sm.value = sm.options.type_conversion[sm.value_type]({ year = year, month = month, day = day, hour = hour, min = min, sec = sec, msec = msec or 0, time_offset = tz or "00:00" })
@@ -1162,7 +1162,7 @@ function tinytoml.parse(filename, options)
       max_nesting_depth = 1000,
       max_filesize = 100000000,
       load_from_string = false,
-      encode_date_and_times_as = "string",
+      encode_datetime_as = "string",
       type_conversion = {
          ["datetime"] = generic_type_conversion,
          ["datetime-local"] = generic_type_conversion,
@@ -1185,8 +1185,8 @@ function tinytoml.parse(filename, options)
          assert(type(options.load_from_string) == "boolean", "the tinytoml option 'load_from_string' takes in a 'function'. You passed in the value '" .. tostring(options.load_from_string) .. "' of type '" .. type(options.load_from_string) .. "'")
       end
 
-      if options.encode_date_and_times_as ~= nil then
-         assert(type(options.encode_date_and_times_as) == "string", "the tinytoml option 'encode_date_and_times_as' takes in either the 'string' or 'table' (as type 'string'). You passed in the value '" .. tostring(options.encode_date_and_times_as) .. "' of type '" .. type(options.encode_date_and_times_as) .. "'")
+      if options.encode_datetime_as ~= nil then
+         assert(type(options.encode_datetime_as) == "string", "the tinytoml option 'encode_datetime_as' takes in either the 'string' or 'table' (as type 'string'). You passed in the value '" .. tostring(options.encode_datetime_as) .. "' of type '" .. type(options.encode_datetime_as) .. "'")
       end
 
       if options.type_conversion ~= nil then
@@ -1204,7 +1204,7 @@ function tinytoml.parse(filename, options)
       options.max_nesting_depth = options.max_nesting_depth or default_options.max_nesting_depth
       options.max_filesize = options.max_filesize or default_options.max_filesize
       options.load_from_string = options.load_from_string or default_options.load_from_string
-      options.encode_date_and_times_as = options.encode_date_and_times_as or default_options.encode_date_and_times_as
+      options.encode_datetime_as = options.encode_datetime_as or default_options.encode_datetime_as
       options.type_conversion = options.type_conversion or default_options.type_conversion
 
 
@@ -1351,7 +1351,7 @@ local function escape_string(str, multiline, is_key)
          ["date-local"] = generic_type_conversion,
          ["time-local"] = generic_type_conversion,
       }
-      sm.options.encode_date_and_times_as = "string"
+      sm.options.encode_datetime_as = "string"
 
 
       sm._, sm.end_seq, sm.match = sm.input:find("^([^ #\r\n,%[{%]}]+)", sm.i)
@@ -1504,7 +1504,7 @@ local function encoder(input_table, encoded_string, depth, options)
             end
             error_message[#error_message + 1] = escape_key(k)
             error_message[#error_message + 1] = "', received the following error message:\n\n"
-
+            _, _, error_or_encoded_element = error_or_encoded_element:find(".-:.-: (.*)")
             error_message[#error_message + 1] = error_or_encoded_element
             error(table.concat(error_message))
          end
