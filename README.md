@@ -174,4 +174,4 @@ Here's a helpful comparison table that can be useful in deciding which Lua TOML 
 - tinytoml, toml2lua, and tomlua's toml-test support were verified by running through toml-test. toml-edit and toml.lua were based on the bindings, which both passed toml-test.
 - I was using hyperfine to run the tests, and toml.lua's time estimate rapidly started rising in the middle of the 16KB run and segfaulted with the higher runs.
 - Tests were run in a docker container running on an arm64 Mac, as tomlua did not compile on macOS at the time the benchmarks were taken.
-- Standard benchmark disclaimer: These are all relative to each other and milage on your machine will vary.
+- Standard benchmark disclaimer: These are all relative to each other and your mileage will [likely] vary.
