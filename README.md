@@ -1,13 +1,17 @@
 # tinytoml
 [![Run Tests and Code Coverage](https://github.com/FourierTransformer/tinytoml/actions/workflows/test-and-coverage.yml/badge.svg)](https://github.com/FourierTransformer/tinytoml/actions/workflows/test-and-coverage.yml) [![Coverage Status](https://coveralls.io/repos/github/FourierTransformer/tinytoml/badge.svg?branch=refs/pull/1/merge)](https://coveralls.io/github/FourierTransformer/tinytoml?branch=main)
 
-tinytoml is a pure Lua [TOML](https://toml.io) parsing library. It's written in [Teal](https://github.com/teal-language/tl) and works with Lua 5.1-5.5 and LuaJIT 2.0/2.1. tinytoml parses a TOML document into a standard Lua table using default Lua types. Since TOML supports various datetime types, those are by default represented by strings, but can be configured to use a custom type if desired.
+tinytoml is a pure Lua [TOML](https://toml.io) parsing library. It's written in [Teal](https://github.com/teal-language/tl) and works with Lua 5.1-5.5 and LuaJIT 2.0/2.1. tinytoml parses a TOML document into a standard Lua table using default Lua types. Since TOML supports various datetime types, those are by default represented by strings, but can be configured as a table or passed in to a method so it is represented by a custom or 3rd-party library.
 
 tinytoml passes all the [toml-test](https://github.com/toml-lang/toml-test) use cases that Lua can realistically pass (even the UTF-8 ones!). The few that fail are mostly representational:
 - Lua doesn't differentiate between an array or a dictionary, so tests involving _empty_ arrays fail.
 - Some Lua versions have differences in how numbers are represented. Lua 5.3 introduced integers, so tests involving integer representation pass on Lua 5.3+
 
 Current Supported TOML Version: 1.1.0
+
+> [!NOTE]
+> | [Installing](#installing) | [Parsing](#parsing-toml) | [Encoding](#encoding-toml) | [Comparison]() |
+> | ---------- | ------- | -------- | ---------- |
 
 ## Installing
 You can grab the `tinytoml.lua` file from this repo (or the `tinytoml.tl` file if using Teal) or install it via LuaRocks
@@ -152,7 +156,7 @@ local_date = 1979-05-27
 
 This effectively means you'll have to pre-process dates and times to strings in your codebase, before passing them to tinytoml's encoder.
 
-## Comparisons
+## Comparison
 Here's a helpful comparison table that can be useful in deciding which Lua TOML parser to use. The data was collected with the most recent versions as of 1/2026.
 
 | Feature           | tinytoml                      | toml-edit                     | toml.lua                      | toml2lua                       | tomlua                        |
@@ -161,7 +165,7 @@ Here's a helpful comparison table that can be useful in deciding which Lua TOML 
 | TOML Version      | 1.1.0                         | 1.0.0                         | 1.0.0                         | 1.0.0                          | Not Specified                 |
 | UTF-8 Support     | ✅                             | ✅                             | ✅                             | ✅                              | ✅                             |
 | Passes toml-test  | ✅                             | ✅                             | ✅                             | ❌                              | ❌                             |
-| Date/Time Support | Register Method               |                               | Custom Userdata/Lua Table     | Lua Table                      | Custom Userdata               |
+| Date/Time Support | String/Table/Register Method  |                               | Custom Userdata/Lua Table     | Lua Table                      | Custom Userdata               |
 | Encoder           | Basic                         | Comment Preserving            | Basic, many options           | Basic                          | Very Configurable             |
 | 16 KB TOML decode | Lua: 3.9ms <br> LuaJIT: 2.7ms | Lua: 2.8ms <br> LuaJIT: 1.0ms | Lua: dnf <br> LuaJIT: 2.4ms   | Lua: 32.5ms <br> LuaJIT: 7.0ms | Lua: 1.6ms <br> LuaJIT: .29ms |
 | 8 MB TOML decode  | Lua: 1.49s <br> LuaJIT: 415ms  | Lua: 929ms <br> LuaJIT: 462ms | Lua: error <br> LuaJIT: error | Lua: 32.01s <br> LuaJIT: 3.13s  | Lua: 318ms <br> LuaJIT: 119.7ms     |
