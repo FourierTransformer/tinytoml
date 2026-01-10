@@ -68,6 +68,39 @@ There are a few parsing options available that are passed in the the `options` p
   tinytoml.parse("a=2024-10-31T12:49:00Z", {load_from_string=true, type_conversion=type_conversion})
   ```
 
+- `encode_datetime_as` (default `string`)
+
+  Allows encoding datetime either as a `string` or a `table`. The `table` will take all the individual fields and place them in a table.
+  This can be used in conjunction with `type_conversion` - either the string or table representation would be passed into whatever function is
+  specified in `type_conversion`.
+
+  Example:
+
+  ```toml
+  offset_datetime = 1979-05-27T07:32:00Z
+  local_datetime = 1979-05-27T07:32:00
+  local_time = 07:32:00
+  local_date = 1979-05-27
+  ```
+
+  ```lua
+  -- with the option: { encode_datetime_as = "string" }
+  {
+    offset_datetime = "1979-05-27T07:32:00Z",
+    local_datetime = "1979-05-27T07:32:00",
+    local_time = "07:32:00",
+    local_date = "1979-05-27"
+  }
+  -- with the option: { encode_datetime_as = "table" }
+  {
+    offset_datetime = {year = 1979, month = 05, day = 27, hour = 7, min = 32, sec = 0, msec = 0, time_offset = "00:00"},
+    local_datetime = {year = 1979, month = 05, day = 27, hour = 7, min = 32, sec = 0, msec = 0},
+    local_time = {hour = 7, min = 32, sec = 0, msec = 0},
+    local_date = {year = 1979, month = 05, day = 27}
+  }
+
+  ```
+
 - `max_nesting_depth` (default `1000`) and `max_filesize` (default `100000000` - 100 MB)
 
   The maximum nesting depth and maxmimum filesize in bytes. tinytoml will throw an error if either of these are exceeded.
