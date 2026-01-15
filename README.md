@@ -9,7 +9,8 @@ tinytoml passes all the [toml-test](https://github.com/toml-lang/toml-test) use 
 
 Current Supported TOML Version: 1.1.0
 
-> [!NOTE]
+
+> [!TIP]
 > | [Installing](#installing) | [Parsing](#parsing-toml) | [Encoding](#encoding-toml) | [Comparison](#comparison) |
 > | ---------- | ------- | -------- | ---------- |
 
@@ -95,6 +96,7 @@ There are a few parsing options available that are passed in the the `options` p
     local_time = "07:32:00",
     local_date = "1979-05-27"
   }
+
   -- with the option: { parse_datetime_as = "table" }
   {
     offset_datetime = {year = 1979, month = 05, day = 27, hour = 7, min = 32, sec = 0, msec = 0, time_offset = "00:00"},
@@ -168,10 +170,14 @@ Here's a helpful comparison table that can be useful in deciding which Lua TOML 
 | Date/Time Support | String/Table/Register Method  |                               | Custom Userdata/Lua Table     | Lua Table                      | Custom Userdata               |
 | Encoder           | Basic                         | Comment Preserving            | Basic, many options           | Basic                          | Very Configurable             |
 | 16 KB TOML decode | Lua: 3.9ms <br> LuaJIT: 2.7ms | Lua: 2.8ms <br> LuaJIT: 1.0ms | Lua: dnf <br> LuaJIT: 2.4ms   | Lua: 32.5ms <br> LuaJIT: 7.0ms | Lua: 1.6ms <br> LuaJIT: .29ms |
+<<<<<<< HEAD
 | 8 MB TOML decode  | Lua: 1.49s <br> LuaJIT: 415ms  | Lua: 929ms <br> LuaJIT: 462ms | Lua: error <br> LuaJIT: error | Lua: 32.01s <br> LuaJIT: 3.13s  | Lua: 318ms <br> LuaJIT: 119.7ms     |
+=======
+| 8 MB TOML decode  | Lua: 1.49s <br> LuaJIT: 415ms  | Lua: 929ms <br> LuaJIT: 462ms | Lua: error <br> LuaJIT: error | Lua: 12.01s <br> LuaJIT: 3.13s  | Lua: 318ms <br> LuaJIT: 119.7ms     |
+>>>>>>> main
 
 **NOTES:**
 - tinytoml, toml2lua, and tomlua's toml-test support were verified by running through toml-test. toml-edit and toml.lua were based on the bindings, which both passed toml-test.
 - I was using hyperfine to run the tests, and toml.lua's time estimate rapidly started rising in the middle of the 16KB run and segfaulted with the higher runs.
 - Tests were run in a docker container running on an arm64 Mac, as tomlua did not compile on macOS at the time the benchmarks were taken.
-- Standard benchmark disclaimer: These are all relative to each other and milage on your machine will vary.
+- Standard benchmark disclaimer: These are all relative to each other and your mileage will [likely] vary.
