@@ -13,7 +13,7 @@ end
 local record TinyTomlOptions
     load_from_string: boolean
     type_conversion: {TomlConversionType:function<T>(raw_value: string | table):T}
-    encode_datetime_as: DateTimeEncode
+    parse_datetime_as: DateTimeEncode
     max_filesize: integer
     max_nesting_depth: integer
 end
@@ -633,7 +633,7 @@ end
 
 local function assign_time_local(sm: StateMachine, match: string, hour: integer, min: integer, sec: integer, msec: integer)
     sm.value_type = "time-local"
-    if sm.options.encode_datetime_as == "string" then
+    if sm.options.parse_datetime_as == "string" then
         sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType](match)
     else
         sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType]({hour=hour, min=min, sec=sec, msec=msec})
@@ -642,7 +642,7 @@ end
 
 local function assign_date_local(sm: StateMachine, match: string, year: integer, month: integer, day: integer)
     sm.value_type = "date-local"
-    if sm.options.encode_datetime_as == "string" then
+    if sm.options.parse_datetime_as == "string" then
         sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType](match)
     else
         sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType]({year=year, month=month, day=day})
@@ -651,7 +651,7 @@ end
 
 local function assign_datetime_local(sm: StateMachine, match: string, year: integer, month: integer, day: integer, hour: integer, min: integer, sec: integer, msec?: integer)
     sm.value_type = "datetime-local"
-    if sm.options.encode_datetime_as == "string" then
+    if sm.options.parse_datetime_as == "string" then
         sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType](match)
     else
         sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType]({year=year, month=month, day=day, hour=hour, min=min, sec=sec, msec=msec or 0})
@@ -665,7 +665,7 @@ local function assign_datetime(sm: StateMachine, match: string, year: integer, m
         validate_hours_minutes(sm, _tointeger(hour_s), _tointeger(min_s), "offset-date-time")
     end
     sm.value_type = "datetime"
-    if sm.options.encode_datetime_as == "string" then
+    if sm.options.parse_datetime_as == "string" then
         sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType](match)
     else
         sm.value = sm.options.type_conversion[sm.value_type as TomlConversionType]({year=year, month=month, day=day, hour=hour, min=min, sec=sec, msec=msec or 0, time_offset=tz or "00:00"})
@@ -739,7 +739,8 @@ local function validate_datetime(sm: StateMachine, value: string): boolean
         local temp_ext: string
         sm._, sm._, sec_s, temp_ext = sm.ext:find("^:(%d%d)(.*)$") as (integer, integer, string, string)
         if sec_s then
-            validate_seconds(sm, _tointeger(sec_s), "local-time")
+            sec = _tointeger(sec_s)
+            validate_seconds(sm, sec, "local-time")
             sm.match = sm.match .. ":" .. sec_s
             sm.ext = temp_ext
         else
@@ -1162,7 +1163,7 @@ function tinytoml.parse(filename: string, options?: TinyTomlOptions): {string:an
         max_nesting_depth = 1000,
         max_filesize = 100000000,
         load_from_string = false,
-        encode_datetime_as = "string",
+        parse_datetime_as = "string",
         type_conversion = {
             ["datetime"] = generic_type_conversion,
             ["datetime-local"] = generic_type_conversion,
@@ -1185,8 +1186,8 @@ function tinytoml.parse(filename: string, options?: TinyTomlOptions): {string:an
             assert(type(options.load_from_string) == "boolean", "the tinytoml option 'load_from_string' takes in a 'function'. You passed in the value '" .. tostring(options.load_from_string) .. "' of type '" .. type(options.load_from_string) .. "'")
         end
 
-        if options.encode_datetime_as ~= nil then
-            assert(type(options.encode_datetime_as) == "string", "the tinytoml option 'encode_datetime_as' takes in either the 'string' or 'table' (as type 'string'). You passed in the value '" .. tostring(options.encode_datetime_as) .. "' of type '" .. type(options.encode_datetime_as) .. "'")
+        if options.parse_datetime_as ~= nil then
+            assert(type(options.parse_datetime_as) == "string", "the tinytoml option 'parse_datetime_as' takes in either the 'string' or 'table' (as type 'string'). You passed in the value '" .. tostring(options.parse_datetime_as) .. "' of type '" .. type(options.parse_datetime_as) .. "'")
         end
 
         if options.type_conversion ~= nil then
@@ -1204,7 +1205,7 @@ function tinytoml.parse(filename: string, options?: TinyTomlOptions): {string:an
         options.max_nesting_depth = options.max_nesting_depth or default_options.max_nesting_depth
         options.max_filesize = options.max_filesize or default_options.max_filesize
         options.load_from_string = options.load_from_string or default_options.load_from_string
-        options.encode_datetime_as = options.encode_datetime_as or default_options.encode_datetime_as
+        options.parse_datetime_as = options.parse_datetime_as or default_options.parse_datetime_as
         options.type_conversion = options.type_conversion or default_options.type_conversion
         
         -- verify/setup the last couple of things
@@ -1351,7 +1352,7 @@ local function escape_string(str: string, multiline: boolean, is_key: boolean): 
             ["date-local"] = generic_type_conversion,
             ["time-local"] = generic_type_conversion
         }
-        sm.options.encode_datetime_as = "string"
+        sm.options.parse_datetime_as = "string"
 
         -- performing the same setup as in close_other_value, should set values correctly to run validate_datetime
         sm._, sm.end_seq, sm.match = sm.input:find("^([^ #\r\n,%[{%]}]+)", sm.i)
