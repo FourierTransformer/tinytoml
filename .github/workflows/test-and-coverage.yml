@@ -9,8 +9,10 @@ jobs:
   test:  
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        lua: [lua=5.1, lua=5.2, lua=5.3, lua=5.4, lua=5.5, luajit=@v2.0, luajit=@v2.1]
+        # TODO: re-add lua=5.5 once argparse has been updated
+        lua: [lua=5.1, lua=5.2, lua=5.3, lua=5.4, luajit=@v2.0, luajit=@v2.1]
     steps:    
       # Checks-out the repository under $GITHUB_WORKSPACE.
       - uses: actions/checkout@v6
@@ -34,12 +36,17 @@ jobs:
         run: |
           luarocks install lua-cjson
           luarocks install luacov
+          luarocks install tested
           luarocks install luacov-coveralls
           
       - name: run toml-test with coverage
         continue-on-error: true
         run: |
           toml-test test -parallel 1 -toml=1.1 -decoder="lua_install/bin/lua -lluacov spec/decoder.lua" -encoder="lua_install/bin/lua -lluacov spec/encoder.lua"
+
+      - name: Run unit tests
+        run: |
+          tested -c
           
       - name: Report test coverage
         if: success()
