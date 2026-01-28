@@ -11,7 +11,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        lua: [lua=5.1, lua=5.2, lua=5.3, lua=5.4, lua=5.5, luajit=@v2.0, luajit=@v2.1]
+        # TODO: re-add lua=5.5 once argparse has been updated
+        lua: [lua=5.1, lua=5.2, lua=5.3, lua=5.4, luajit=@v2.0, luajit=@v2.1]
     steps:    
       # Checks-out the repository under $GITHUB_WORKSPACE.
       - uses: actions/checkout@v6
