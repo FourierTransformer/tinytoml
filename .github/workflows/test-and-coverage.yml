@@ -30,7 +30,7 @@ jobs:
           echo lua_install/bin >> $GITHUB_PATH
 
       - name: Install toml-test
-        run: go install github.com/toml-lang/toml-test/v2/cmd/toml-test@latest
+        run: go install github.com/toml-lang/toml-test/v2/cmd/toml-test@v2.2.0
     
       - name: install depedencies
         run: |
