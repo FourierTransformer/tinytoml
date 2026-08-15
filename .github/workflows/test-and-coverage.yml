@@ -31,21 +31,9 @@ jobs:
       - name: Install toml-test
         run: go install github.com/toml-lang/toml-test/v2/cmd/toml-test@v2.2.0
     
-      - name: install depedencies
-        run: |
-          luarocks install lua-cjson
-          luarocks install luacov
-          luarocks install tested
-          luarocks install luacov-coveralls
-
-      - name: debug location
-        run: |
-          ls -l
-          ls -l tests
-
       - name: Run unit tests
         run: |
-          tested -c
+          luarocks test
 
       - name: run toml-test with coverage
         continue-on-error: true
