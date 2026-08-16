@@ -25,7 +25,7 @@ test_dependencies = {
     "luacov-coveralls"
 }
 
-test = { type = "tested" }
+test = { type = "tested", flags = {"-c"} }
 
 dependencies = {
     "lua >= 5.1",
