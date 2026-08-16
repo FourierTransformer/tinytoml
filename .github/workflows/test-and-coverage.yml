@@ -11,8 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # TODO: re-add lua=5.5 once argparse has been updated
-        lua: [lua=5.1, lua=5.2, lua=5.3, lua=5.4, luajit=@v2.0, luajit=@v2.1]
+        lua: [lua=5.1, lua=5.2, lua=5.3, lua=5.4, lua=5.5, luajit=@v2.0, luajit=@v2.1]
     steps:    
       # Checks-out the repository under $GITHUB_WORKSPACE.
       - uses: actions/checkout@v6
@@ -23,6 +22,13 @@ jobs:
       - name: Install libreadline
         run: sudo apt-get install -y libreadline-dev
 
+      - name: Cache Restore
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            lua_install
+          key: ${{ matrix.lua }}-lua_install
+
       - name: Install Lua (${{ matrix.lua }})
         run: |
           pip install git+https://github.com/luarocks/hererocks
@@ -32,22 +38,22 @@ jobs:
       - name: Install toml-test
         run: go install github.com/toml-lang/toml-test/v2/cmd/toml-test@v2.2.0
     
-      - name: install depedencies
+      - name: Run unit tests
         run: |
-          luarocks install lua-cjson
-          luarocks install luacov
-          luarocks install tested
-          luarocks install luacov-coveralls
-          
+          luarocks test
+
       - name: run toml-test with coverage
         continue-on-error: true
         run: |
           toml-test test -parallel 1 -toml=1.1 -decoder="lua_install/bin/lua -lluacov spec/decoder.lua" -encoder="lua_install/bin/lua -lluacov spec/encoder.lua"
 
-      - name: Run unit tests
-        run: |
-          tested -c
-          
+      - name: Save Cache
+        uses: actions/cache/save@v5
+        with:
+          path: |
+            lua_install
+          key: ${{ matrix.lua }}-lua_install
+
       - name: Report test coverage
         if: success()
         continue-on-error: true

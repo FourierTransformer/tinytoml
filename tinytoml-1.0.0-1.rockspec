@@ -1,3 +1,4 @@
+rockspec_format = "3.0"
 package = "tinytoml"
 version = "1.0.0-1"
 
@@ -15,6 +16,16 @@ description = {
     homepage = "https://github.com/FourierTransformer/tinytoml",
     license = "MIT"
 }
+
+test_dependencies = {
+    "tested",
+    "tl",
+    "lua-cjson",
+    "luacov",
+    "luacov-coveralls"
+}
+
+test = { type = "tested", flags = {"-c"} }
 
 dependencies = {
     "lua >= 5.1",
