@@ -1,0 +1,1 @@
+valid/array/empty,valid/inline-table/array-02" -skip="encoder/spec-1.1.0/common-23,encoder/integer/long,encoder/inline-table/spaces,encoder/inline-table/array-02,encoder/float/zero,encoder/float/underscore,encoder/float/max-int,encoder/float/exponent,encoder/array/empty,encoder/comment/tricky
