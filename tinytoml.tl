@@ -1081,8 +1081,6 @@ local function close_inline_table(sm: StateMachine): states
         return "inside_array"
     elseif sm.nested_stack[#sm.nested_stack] == "inline_table" then
         return "assign"
-    else
-        _error(sm, "close_inline_table should not be called from the previous state: " .. sm.nested_stack[#sm.nested_stack] as string .. ". Please submit an issue with your TOML file so we can look into the issue!")
     end
 end
 
