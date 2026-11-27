@@ -1,10 +1,10 @@
 rockspec_format = "3.0"
 package = "tinytoml"
-version = "1.0.0-1"
+version = "1.0.1-1"
 
 source = {
     url = "git://github.com/FourierTransformer/tinytoml.git",
-    tag = "1.0.0"
+    tag = "1.0.1"
 }
 
 description = {
@@ -18,10 +18,9 @@ description = {
 }
 
 test_dependencies = {
-    "tested",
+    "tested == 0.6.0",
     "tl",
     "lua-cjson",
-    "luacov",
     "luacov-coveralls"
 }
 
