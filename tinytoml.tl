@@ -28,7 +28,7 @@ local record tinytoml
 end
 
 local TOML_VERSION = "1.1.0"
-tinytoml._VERSION = "tinytoml 1.0.0"
+tinytoml._VERSION = "tinytoml 1.0.1"
 tinytoml._TOML_VERSION = TOML_VERSION
 tinytoml._DESCRIPTION = "a single-file pure Lua TOML parser"
 tinytoml._URL = "https://github.com/FourierTransformer/tinytoml"
