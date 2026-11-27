@@ -43,9 +43,8 @@ jobs:
           luarocks test
 
       - name: run toml-test with coverage
-        continue-on-error: true
         run: |
-          toml-test test -parallel 1 -toml=1.1 -decoder="lua_install/bin/lua -lluacov spec/decoder.lua" -encoder="lua_install/bin/lua -lluacov spec/encoder.lua"
+          toml-test test -parallel 1 -toml=1.1 -decoder="lua_install/bin/lua -lluacov spec/decoder.lua" -encoder="lua_install/bin/lua -lluacov spec/encoder.lua" -skip="$(cat spec/expected_decoder_fails.txt)" -skip="$(cat spec/expected_encoder_fails.txt)"
 
       - name: Save Cache
         uses: actions/cache/save@v5
