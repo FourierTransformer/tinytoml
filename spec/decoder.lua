@@ -1,4 +1,4 @@
-
+require("compat53") --for math.type. should be installed because of tl
 
 local cjson = require("cjson")
 local tinytoml = require("tinytoml")
