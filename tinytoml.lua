@@ -154,6 +154,12 @@ tinytoml._LICENSE = "MIT"
 
 
 
+
+
+
+
+
+
 local sbyte = string.byte
 local chars = {
    SINGLE_QUOTE = sbyte("'"),
@@ -827,6 +833,7 @@ local function create_array(sm)
    if sm.nested_arrays >= sm.options.max_nesting_depth then
       _error(sm, "Maximum nesting depth has exceeded " .. sm.options.max_nesting_depth .. ". If this larger nesting depth is required, feel free to set 'max_nesting_depth' in the parser options.")
    end
+   table.insert(sm.nested_stack, "array")
    sm.arrays[sm.nested_arrays] = {}
    sm.i = sm.i + 1
 end
@@ -848,10 +855,16 @@ local function close_array(sm)
    sm.value = sm.arrays[sm.nested_arrays]
    sm.value_type = "array"
    sm.nested_arrays = sm.nested_arrays - 1
-   if sm.nested_arrays == 0 then
+   table.remove(sm.nested_stack)
+
+   if #sm.nested_stack == 0 then
       return "assign"
-   else
+   end
+
+   if sm.nested_stack[#sm.nested_stack] == "array" then
       return "inside_array"
+   elseif sm.nested_stack[#sm.nested_stack] == "inline_table" then
+      return "assign"
    end
 end
 
@@ -1027,17 +1040,19 @@ local function create_inline_table(sm)
    end
 
    local backup = {
-      previous_state = sm.mode,
       meta_table = sm.meta_table,
+      current_meta_table = sm.current_meta_table,
       current_table = sm.current_table,
       keys = { _unpack(sm.keys) },
    }
+   table.insert(sm.nested_stack, "inline_table")
 
    local new_inline_table = {}
    sm.current_table = new_inline_table
 
    sm.inline_table_backup[sm.nested_inline_tables] = backup
 
+   sm.current_meta_table = {}
    sm.current_table = {}
    sm.meta_table = {}
    sm.keys = {}
@@ -1056,16 +1071,20 @@ local function close_inline_table(sm)
    local restore = sm.inline_table_backup[sm.nested_inline_tables]
    sm.keys = restore.keys
    sm.meta_table = restore.meta_table
+   sm.current_meta_table = restore.current_meta_table
    sm.current_table = restore.current_table
 
    sm.nested_inline_tables = sm.nested_inline_tables - 1
+   table.remove(sm.nested_stack)
 
-   if restore.previous_state == "array" then
-      return "inside_array"
-   elseif restore.previous_state == "value" then
+   if #sm.nested_stack == 0 then
       return "assign"
-   else
-      _error(sm, "close_inline_table should not be called from the previous state: " .. restore.previous_state .. ". Please submit an issue with your TOML file so we can look into the issue!")
+   end
+
+   if sm.nested_stack[#sm.nested_stack] == "array" then
+      return "inside_array"
+   elseif sm.nested_stack[#sm.nested_stack] == "inline_table" then
+      return "assign"
    end
 end
 
@@ -1248,6 +1267,7 @@ function tinytoml.parse(filename, options)
    sm.nested_arrays = 0
    sm.inline_table_backup = {}
    sm.nested_inline_tables = 0
+   sm.nested_stack = {}
    sm.table_type = "table"
    sm.input_length = #sm.input
    sm.current_table = sm.output

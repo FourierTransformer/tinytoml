@@ -1,7 +1,8 @@
 local tested = require("tested")
+local t = tested.new()
 local tinytoml = require("tinytoml")
 
-tested.test("encode date as string", function()
+t:test("encode date as string", function()
 
     local date_toml = [[offset_datetime = 1979-05-27T07:32:00Z
 local_datetime = 1979-05-27T07:32:00
@@ -21,7 +22,7 @@ local_date = 1979-05-27]]
 
 end)
 
-tested.test("encode date as table", function()
+t:test("encode date as table", function()
 
     local date_toml = [[offset_datetime = 1979-05-27T07:32:00Z
 local_datetime = 1979-05-27T07:32:00
@@ -41,4 +42,4 @@ local_date = 1979-05-27]]
 
 end)
 
-return tested
+return t
