@@ -1,7 +1,8 @@
-local tinytoml = require("tinytoml")
 local tested = require("tested")
+local t = tested.new()
+local tinytoml = require("tinytoml")
 
-tested.test("max nesting depth", function()
+t:test("max nesting depth", function()
 	local crazy_toml = {"e="}
 	for i = 1, 2000 do
 		table.insert(crazy_toml, "{e=")
@@ -19,7 +20,7 @@ tested.test("max nesting depth", function()
 
 end)
 
-tested.test("at max nesting depth", function()
+t:test("at max nesting depth", function()
 	local crazy_toml = {"e="}
 	for i = 1, 998 do
 		table.insert(crazy_toml, "{e=")
@@ -35,7 +36,7 @@ tested.test("at max nesting depth", function()
 	tested.assert({given="edge of nesting", should="does not raise an error", expected=true, actual=ok})
 end)
 
-tested.test("slightly above max nesting depth", function()
+t:test("slightly above max nesting depth", function()
 	local crazy_toml = {"e="}
 	for i = 1, 1500 do
 		table.insert(crazy_toml, "{e=")
@@ -51,4 +52,4 @@ tested.test("slightly above max nesting depth", function()
 	tested.assert({given="edge of nesting", should="does not raise an error", expected=true, actual=ok})
 end)
 
-return tested
+return t
