@@ -113,6 +113,7 @@ end
 
 local record InlineTableSave
     current_table: {any}
+    current_meta_table: {any:{MTType}}
     meta_table: {any:{MTType}}
     keys: {string}
 end
@@ -1038,8 +1039,9 @@ local function create_inline_table(sm: StateMachine)
         _error(sm, "Maximum nesting depth has exceeded " .. sm.options.max_nesting_depth .. ". If this larger nesting depth is required, feel free to set 'max_nesting_depth' in the parser options.")
     end
 
-    local backup: InlineTableSave = {
+    local backup <total>: InlineTableSave = {
         meta_table = sm.meta_table,
+        current_meta_table = sm.current_meta_table,
         current_table = sm.current_table as {any},
         keys = {_unpack(sm.keys)} as {string},
     }
@@ -1050,6 +1052,7 @@ local function create_inline_table(sm: StateMachine)
 
     sm.inline_table_backup[sm.nested_inline_tables] = backup
 
+    sm.current_meta_table = {}
     sm.current_table = {}
     sm.meta_table = {}
     sm.keys = {}
@@ -1068,6 +1071,7 @@ local function close_inline_table(sm: StateMachine): states
     local restore = sm.inline_table_backup[sm.nested_inline_tables]
     sm.keys = restore.keys
     sm.meta_table = restore.meta_table
+    sm.current_meta_table = restore.current_meta_table
     sm.current_table = restore.current_table as {any}
 
     sm.nested_inline_tables = sm.nested_inline_tables - 1

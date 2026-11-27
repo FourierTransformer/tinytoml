@@ -159,6 +159,7 @@ tinytoml._LICENSE = "MIT"
 
 
 
+
 local sbyte = string.byte
 local chars = {
    SINGLE_QUOTE = sbyte("'"),
@@ -1040,6 +1041,7 @@ local function create_inline_table(sm)
 
    local backup = {
       meta_table = sm.meta_table,
+      current_meta_table = sm.current_meta_table,
       current_table = sm.current_table,
       keys = { _unpack(sm.keys) },
    }
@@ -1050,6 +1052,7 @@ local function create_inline_table(sm)
 
    sm.inline_table_backup[sm.nested_inline_tables] = backup
 
+   sm.current_meta_table = {}
    sm.current_table = {}
    sm.meta_table = {}
    sm.keys = {}
@@ -1068,6 +1071,7 @@ local function close_inline_table(sm)
    local restore = sm.inline_table_backup[sm.nested_inline_tables]
    sm.keys = restore.keys
    sm.meta_table = restore.meta_table
+   sm.current_meta_table = restore.current_meta_table
    sm.current_table = restore.current_table
 
    sm.nested_inline_tables = sm.nested_inline_tables - 1
